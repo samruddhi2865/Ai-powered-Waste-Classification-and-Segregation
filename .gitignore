@@ -1,0 +1,26 @@
+# Datasets and images
+data/
+datasets/
+images/
+labels/
+*.jpg
+*.jpeg
+*.png
+*.cache
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Frontend / outputs
+frontend/
+utils/
+runs/
+outputs/
+*.pt
+*.pth
+
+# OS / IDE
+.vscode/
+.DS_Store
