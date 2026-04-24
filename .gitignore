@@ -1,26 +1,44 @@
-# Datasets and images
-data/
-datasets/
-images/
-labels/
-*.jpg
-*.jpeg
-*.png
-*.cache
-
 # Python
 venv/
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
 
-# Frontend / outputs
-frontend/
-utils/
-runs/
-outputs/
-*.pt
-*.pth
+# Streamlit
+.streamlit/secrets.toml
+
+# Datasets and training data
+datasets/
+scripts/datasets/
+data/
+labels/
+*.cache
+*.zip
+
+# Test images (except static images)
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
 
 # OS / IDE
 .vscode/
 .DS_Store
+.idea/
+
+# Logs
+*.log
+logs/
+
+# Model files (too large for git - use Git LFS if needed)
+# Uncomment if models are too large
+# *.pt
+# *.pth
