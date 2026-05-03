@@ -206,35 +206,6 @@ The model is loaded from `models/best.pt`. To use a different model:
 1. Replace `models/best.pt` with your trained model
 2. Ensure the model has the same 10 classes defined in `config/data.yaml`
 
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Please follow these steps:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
----
-
-## 📝 License
-
-This project is licensed under the MIT License.
-
----
-
-## 🙏 Acknowledgments
-
-- **Ultralytics** for YOLOv8
-- **Streamlit** community
-- Dataset contributors
-- Open source community
-
----
-
 ## 🔮 Future Enhancements
 
 - [ ] Real-time video stream classification
@@ -244,21 +215,6 @@ This project is licensed under the MIT License.
 - [ ] Statistics and analytics dashboard
 - [ ] Mobile app version
 - [ ] API integration for third-party apps
-
----
-
-## 📧 Contact & Support
-
-For questions, issues, or suggestions:
-- Open an issue on GitHub
-- Check existing documentation
-- Review troubleshooting section
-
----
-
-**Made with ❤️ for a cleaner planet 🌍**
-
-*Help save the environment by sorting waste correctly!*
 
 ## 🌟 Features
 
@@ -361,7 +317,7 @@ http://localhost:5000
 ## 🧠 Model Information
 
 - **Architecture**: YOLOv8 (Ultralytics)
-- **Training Dataset**: Custom waste classification dataset (merged COCO + TrashNet)
+- **Training Dataset**: Custom waste classification dataset from roboflow (merged COCO + TrashNet)
 - **Classes**: 10 waste categories
 - **Input**: RGB images (any size, auto-resized)
 - **Output**: Bounding boxes with class labels and confidence scores
@@ -726,30 +682,6 @@ User          Flask App       File System      YOLO Model      Response Builder
  │                │                │                │                │
 ```
 
-## �🌐 Deployment
-
-See [README_DEPLOYMENT.md](README_DEPLOYMENT.md) for detailed deployment instructions.
-
-### Quick Deploy Options:
-
-**Render (Recommended)**
-```bash
-# Push to GitHub, then deploy on render.com
-# Build: pip install -r requirements.txt
-# Start: gunicorn app:app
-```
-
-**Railway**
-```bash
-# Auto-detects and deploys from GitHub
-```
-
-**Heroku**
-```bash
-heroku create waste-classifier
-git push heroku main
-```
-
 ## 🛠️ Technologies Used
 
 ### Backend
@@ -760,10 +692,7 @@ git push heroku main
 - **OpenCV**: Computer vision
 
 ### Frontend
-- **HTML5/CSS3**: Structure and styling
-- **JavaScript**: Interactivity
-- **Font Awesome**: Icons
-- **Responsive Design**: Mobile-first approach
+- **Steamlit**: Structure and styling
 
 ## 📊 API Endpoints
 
@@ -814,59 +743,3 @@ names:
   # ... etc
 ```
 
-### App Configuration
-Edit `app.py` to modify:
-- Upload file size limit
-- Allowed file extensions
-- Model paths
-- Confidence threshold
-
-## 🤝 Contributing
-
-Contributions are welcome! Please follow these steps:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit changes (`git commit -m 'Add AmazingFeature'`)
-4. Push to branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-## 📝 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 👥 Authors
-
-- Your Name - Initial work
-
-## 🙏 Acknowledgments
-
-- Ultralytics for YOLOv8
-- Flask community
-- Dataset contributors
-- Open source community
-
-## 📧 Contact
-
-For questions or support, please open an issue or contact:
-- Email: your.email@example.com
-- GitHub: [@yourusername](https://github.com/yourusername)
-
-## 🐛 Known Issues
-
-- Large model files may cause deployment issues on free tiers
-- First request may be slow due to model loading (cold start)
-
-## 🔮 Future Enhancements
-
-- [ ] Real-time video classification
-- [ ] Mobile app version
-- [ ] Multi-language support
-- [ ] User accounts and history
-- [ ] Batch image processing
-- [ ] API for third-party integration
-- [ ] Statistics and analytics dashboard
-
----
-
-Made with ❤️ for a cleaner planet 🌍
