@@ -3,6 +3,9 @@ pages/dashboard.py
 ──────────────────
 Analytics Dashboard — Smart Waste Management System
 Government-grade operational intelligence dashboard.
+
+Restyled to match the light "Government of India" portal theme used in
+app.py — Ashoka Blue / Saffron / India Green on a paper-white background.
 """
 
 import sys, os
@@ -25,246 +28,351 @@ from database import (
 # Page config
 # ─────────────────────────────────────────────
 st.set_page_config(
-    page_title="SWMS Analytics Dashboard",
+    page_title="SWMS Analytics Dashboard | Government of India",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 # ─────────────────────────────────────────────
-# CSS
+# Global CSS — matches app.py's official portal theme
+#   Ink:        #14213D   (headings / primary text)
+#   Ashoka Blue #0F4C81   (primary / links / header)
+#   Saffron     #E17A1D   (accent / CTAs)
+#   India Green #15803D   (biodegradable / success)
+#   Paper       #F5F6F8   (page background)
+#   Card        #FFFFFF
+#   Border      #DCE1E8
+#   Muted text  #5B6B7C
 # ─────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Source+Sans+3:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
 html, body, [class*="css"] {
-    font-family: 'DM Sans', sans-serif;
-    background-color: #070D1A !important;
-    color: #D0D8E8;
+    font-family: 'Source Sans 3', sans-serif;
+    background-color: #F5F6F8 !important;
+    color: #263241;
 }
+
 #MainMenu, footer, header { visibility: hidden; }
-.block-container { padding-top: 1rem !important; padding-bottom: 2rem !important; }
+.block-container { padding-top: 0 !important; padding-bottom: 2rem !important; max-width: 1280px; }
 
-/* ── Government banner ── */
-.gov-banner {
-    background: linear-gradient(90deg, #040912 0%, #0A1628 40%, #0D2040 70%, #040912 100%);
-    border-bottom: 2px solid #00B4A6;
-    padding: 0.5rem 2rem;
-    display: flex; align-items: center; justify-content: space-between;
-    font-family: 'DM Sans', sans-serif; font-size: 0.72rem;
-    color: #6E7E9A; letter-spacing: 0.06em; text-transform: uppercase;
-}
-.gov-banner span { color: #00B4A6; font-weight: 600; }
+/* ── Tricolour strip ── */
+.tricolour-strip { display: flex; width: 100%; height: 5px; margin-bottom: 0; }
+.tricolour-strip div { flex: 1; }
+.strip-saffron { background: #FF9933; }
+.strip-white   { background: #FFFFFF; border-top: 1px solid #E5E7EB; border-bottom: 1px solid #E5E7EB; }
+.strip-green   { background: #138808; }
 
-/* ── Page header ── */
-.dash-hero {
-    background: linear-gradient(135deg, #080F1E 0%, #0A1C30 50%, #060E1C 100%);
-    border: 1px solid #0F2545;
-    border-radius: 16px;
-    padding: 1.8rem 2.4rem;
-    margin-bottom: 1.4rem;
-    position: relative; overflow: hidden;
+/* ── Official header bar ── */
+.gov-header {
+    background: linear-gradient(180deg, #123A66 0%, #0F4C81 100%);
+    padding: 0.85rem 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0;
 }
-.dash-hero::before {
-    content: '';
-    position: absolute; top:-60px; right:-60px;
-    width:200px; height:200px;
-    background: radial-gradient(circle, rgba(0,180,166,0.1) 0%, transparent 70%);
-    pointer-events: none;
+.gov-header-left { display: flex; align-items: center; gap: 0.9rem; }
+.emblem-badge {
+    width: 46px; height: 46px;
+    border-radius: 50%;
+    background: #FFFFFF;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.4rem;
+    border: 2px solid #E17A1D;
+    flex-shrink: 0;
 }
-.dash-eyebrow {
-    font-family: 'DM Mono', monospace;
-    font-size: 0.65rem; color: #00B4A6;
-    letter-spacing: 0.16em; text-transform: uppercase;
+.gov-header-title { color: #FFFFFF; }
+.gov-header-eyebrow {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.66rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #B9D3EC;
+    margin-bottom: 2px;
+}
+.gov-header-name {
+    font-family: 'Fraunces', serif;
+    font-size: 1.18rem;
+    font-weight: 600;
+    line-height: 1.25;
+}
+.gov-header-right { display: flex; align-items: center; gap: 0.6rem; }
+.gov-pill {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    color: #DCE9F7;
+    border: 1px solid rgba(255,255,255,0.35);
+    border-radius: 3px;
+    padding: 4px 10px;
+    text-transform: uppercase;
+}
+
+/* ── Breadcrumb ── */
+.breadcrumb {
+    background: #FFFFFF;
+    border-bottom: 1px solid #DCE1E8;
+    padding: 0.55rem 2rem;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.72rem;
+    color: #5B6B7C;
+    letter-spacing: 0.02em;
+}
+.breadcrumb span.current { color: #0F4C81; font-weight: 600; }
+
+/* ── Hero / circular notice ── */
+.hero-block {
+    background: #FFFFFF;
+    border: 1px solid #DCE1E8;
+    border-top: 4px solid #E17A1D;
+    border-radius: 4px;
+    padding: 1.7rem 2.4rem;
+    margin: 1.6rem 0 1.4rem;
+}
+.hero-ref {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #E17A1D;
+    margin-bottom: 0.6rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.hero-ref::before { content: '§'; font-size: 0.9rem; }
+.hero-title {
+    font-family: 'Fraunces', serif;
+    font-size: 1.85rem;
+    font-weight: 600;
+    color: #14213D;
+    line-height: 1.2;
     margin-bottom: 0.4rem;
 }
-.dash-title {
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 2rem; font-weight: 700; color: #EDF2FA;
-    margin-bottom: 0.3rem; line-height:1.2;
+.hero-title span { color: #0F4C81; }
+.hero-sub {
+    font-size: 0.92rem;
+    color: #5B6B7C;
+    max-width: 680px;
+    line-height: 1.6;
 }
-.dash-title span { color: #00B4A6; }
-.dash-sub { font-size: 0.88rem; color: #4A6080; }
+
+/* ── Section label ── */
+.section-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.68rem;
+    color: #0F4C81;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin: 1.4rem 0 0.7rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px solid #DCE1E8;
+}
 
 /* ── KPI cards ── */
 .kpi-card {
-    background: #080F1E;
-    border: 1px solid #0F2545;
-    border-radius: 12px;
-    padding: 1.2rem 1.4rem;
+    background: #FFFFFF;
+    border: 1px solid #DCE1E8;
+    border-radius: 4px;
+    padding: 1.1rem 1.3rem;
     position: relative; overflow: hidden;
     transition: border-color 0.2s;
 }
-.kpi-card:hover { border-color: #1A3C5E; }
+.kpi-card:hover { border-color: #0F4C81; }
 .kpi-card::before {
     content: '';
-    position: absolute; top:0; left:0; right:0; height:3px;
-    border-radius: 12px 12px 0 0;
+    position: absolute; top:0; left:0; right:0; height:4px;
 }
-.kpi-teal::before  { background: linear-gradient(90deg, #00B4A6, #007A72); }
-.kpi-amber::before { background: linear-gradient(90deg, #F5A623, #C07A10); }
-.kpi-green::before { background: linear-gradient(90deg, #50C878, #308050); }
-.kpi-red::before   { background: linear-gradient(90deg, #DC3C50, #A02030); }
-.kpi-blue::before  { background: linear-gradient(90deg, #50A0DC, #3070A8); }
+.kpi-teal::before  { background: #0F4C81; }
+.kpi-amber::before { background: #E17A1D; }
+.kpi-green::before { background: #15803D; }
+.kpi-red::before   { background: #B91C1C; }
+.kpi-blue::before  { background: #0E7490; }
 
 .kpi-label {
-    font-family: 'DM Mono', monospace;
-    font-size: 0.62rem; color: #3A5070;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.62rem; color: #8593A3;
     letter-spacing: 0.12em; text-transform: uppercase;
     margin-bottom: 0.5rem;
 }
 .kpi-value {
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 2rem; font-weight: 700; color: #EDF2FA;
+    font-family: 'Fraunces', serif;
+    font-size: 1.9rem; font-weight: 600; color: #14213D;
     line-height: 1;
 }
 .kpi-sub {
-    font-size: 0.72rem; color: #2A4060;
-    font-family: 'DM Mono', monospace;
-    margin-top: 0.3rem; letter-spacing: 0.05em;
+    font-size: 0.7rem; color: #A0ACB9;
+    font-family: 'IBM Plex Mono', monospace;
+    margin-top: 0.35rem; letter-spacing: 0.05em;
 }
 .kpi-icon {
-    position: absolute; right:1.2rem; top:50%;
+    position: absolute; right:1.1rem; top:50%;
     transform:translateY(-50%);
-    font-size: 1.8rem; opacity:0.12;
-}
-
-/* ── Section header ── */
-.section-label {
-    font-family: 'DM Mono', monospace;
-    font-size: 0.65rem; color: #00B4A6;
-    letter-spacing: 0.16em; text-transform: uppercase;
-    margin: 1.4rem 0 0.8rem; padding-left: 2px;
+    font-size: 1.7rem; opacity:0.14;
 }
 
 /* ── Chart wrapper ── */
 .chart-card {
-    background: #080F1E;
-    border: 1px solid #0F2545;
-    border-radius: 12px;
-    padding: 1.2rem 1.4rem;
+    background: #FFFFFF;
+    border: 1px solid #DCE1E8;
+    border-radius: 4px;
+    padding: 1.1rem 1.3rem;
     margin-bottom: 1rem;
 }
 .chart-title {
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 0.85rem; font-weight: 600;
-    color: #8090A8; text-transform: uppercase;
-    letter-spacing: 0.07em; margin-bottom: 0.8rem;
-    border-bottom: 1px solid #0A1628; padding-bottom: 0.5rem;
+    font-family: 'Fraunces', serif;
+    font-size: 0.92rem; font-weight: 600;
+    color: #14213D;
+    letter-spacing: 0.01em; margin-bottom: 0.8rem;
+    border-bottom: 1px solid #DCE1E8; padding-bottom: 0.5rem;
 }
 
 /* ── Plotly chart bg ── */
-.stPlotlyChart { border-radius: 8px; overflow: hidden; }
+.stPlotlyChart { border-radius: 4px; overflow: hidden; }
 
 /* ── Table ── */
-.stDataFrame { border-radius: 8px !important; }
+.stDataFrame { border-radius: 4px !important; border: 1px solid #DCE1E8 !important; }
 .stDataFrame th {
-    background: #040912 !important;
-    color: #00B4A6 !important;
-    font-family: 'DM Mono', monospace !important;
+    background: #F5F6F8 !important;
+    color: #0F4C81 !important;
+    font-family: 'IBM Plex Mono', monospace !important;
     font-size: 0.68rem !important;
     letter-spacing: 0.08em !important;
     text-transform: uppercase !important;
 }
 .stDataFrame td {
-    font-family: 'DM Mono', monospace !important;
+    font-family: 'IBM Plex Mono', monospace !important;
     font-size: 0.75rem !important;
-    color: #8090A8 !important;
+    color: #445468 !important;
 }
 
 /* ── Tabs ── */
 .stTabs [data-baseweb="tab-list"] {
-    background: #040912 !important;
-    border-radius: 8px !important;
-    border: 1px solid #0F2545 !important;
+    background: #FFFFFF !important;
+    border-radius: 4px !important;
+    border: 1px solid #DCE1E8 !important;
     padding: 4px !important; gap: 4px !important;
 }
 .stTabs [data-baseweb="tab"] {
     background: transparent !important;
-    border-radius: 6px !important;
-    color: #4A6080 !important;
-    font-family: 'Space Grotesk', sans-serif !important;
-    font-weight: 500 !important;
+    border-radius: 3px !important;
+    color: #5B6B7C !important;
+    font-family: 'Fraunces', serif !important;
+    font-weight: 600 !important;
     font-size: 0.85rem !important;
     padding: 0.5rem 1.2rem !important;
     border: none !important;
 }
 .stTabs [aria-selected="true"] {
-    background: #0A1C30 !important;
-    color: #00B4A6 !important;
-    border: 1px solid #00B4A6 !important;
+    background: #EAF2FA !important;
+    color: #0F4C81 !important;
+    border: 1px solid #0F4C81 !important;
 }
 
 /* ── Buttons ── */
 .stButton > button {
-    font-family: 'Space Grotesk', sans-serif !important;
-    font-weight: 600 !important; font-size: 0.82rem !important;
-    border-radius: 8px !important; letter-spacing: 0.04em !important;
+    font-family: 'Source Sans 3', sans-serif !important;
+    font-weight: 600 !important; font-size: 0.85rem !important;
+    border-radius: 4px !important; letter-spacing: 0.01em !important;
 }
 .stButton > button[kind="primary"] {
-    background: linear-gradient(135deg, #00B4A6, #008A80) !important;
-    color: #FFF !important; border: none !important;
-    box-shadow: 0 4px 16px rgba(0,180,166,0.3) !important;
+    background: #E17A1D !important;
+    color: #FFFFFF !important; border: none !important;
+    box-shadow: 0 2px 8px rgba(225,122,29,0.28) !important;
+}
+.stButton > button[kind="primary"]:hover {
+    background: #C2670F !important;
+    box-shadow: 0 3px 10px rgba(225,122,29,0.4) !important;
 }
 .stButton > button:not([kind="primary"]) {
-    background: #080F1E !important; color: #80A0C0 !important;
-    border: 1px solid #1A3050 !important;
+    background: #FFFFFF !important; color: #0F4C81 !important;
+    border: 1px solid #C6CEDA !important;
 }
 .stButton > button:not([kind="primary"]):hover {
-    border-color: #00B4A6 !important; color: #00B4A6 !important;
+    border-color: #0F4C81 !important; background: #EAF2FA !important;
 }
 
 /* ── Sidebar ── */
 section[data-testid="stSidebar"] {
-    background: #040912 !important;
-    border-right: 1px solid #0A1C2E !important;
+    background: #FFFFFF !important;
+    border-right: 1px solid #DCE1E8 !important;
 }
 section[data-testid="stSidebar"] .stMarkdown h3 {
-    font-family: 'Space Grotesk', sans-serif !important;
-    color: #6E7E9A !important; font-size: 0.72rem !important;
-    letter-spacing: 0.12em !important; text-transform: uppercase !important;
+    font-family: 'Fraunces', serif !important;
+    color: #14213D !important; font-size: 0.85rem !important;
+    letter-spacing: 0.02em !important; text-transform: none !important;
     font-weight: 600 !important;
 }
 
 /* ── Nature pill ── */
 .nature-pill {
     display: inline-block;
-    font-family: 'DM Mono', monospace;
-    font-size: 0.65rem; letter-spacing: 0.08em;
-    padding: 2px 8px; border-radius: 4px; border: 1px solid;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.64rem; letter-spacing: 0.07em;
+    padding: 2px 9px; border-radius: 3px; border: 1px solid;
     text-transform: uppercase;
 }
 
 /* ── Download button ── */
 .stDownloadButton > button {
-    background: #080F1E !important;
-    border: 1px solid #00B4A6 !important;
-    color: #00B4A6 !important;
-    font-family: 'Space Grotesk', sans-serif !important;
-    font-weight: 600 !important; border-radius: 8px !important;
+    background: #FFFFFF !important;
+    border: 1px solid #0F4C81 !important;
+    color: #0F4C81 !important;
+    font-family: 'Source Sans 3', sans-serif !important;
+    font-weight: 600 !important; border-radius: 4px !important;
+}
+.stDownloadButton > button:hover {
+    background: #EAF2FA !important;
 }
 
+.stAlert { border-radius: 4px !important; }
+
 /* ── Footer ── */
+.gov-footer-wrap { background: #14213D; margin-top: 2.4rem; }
 .gov-footer {
+    max-width: 1280px; margin: 0 auto; padding: 1rem 2rem;
     text-align: center;
-    font-family: 'DM Mono', monospace;
-    font-size: 0.66rem; color: #1E2E3E;
-    letter-spacing: 0.1em; text-transform: uppercase;
-    padding: 1.5rem 0 0.5rem;
-    border-top: 1px solid #0A1628;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.66rem; color: #6C7D93;
+    letter-spacing: 0.06em; text-transform: uppercase;
 }
 </style>
+""", unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────
+# Tricolour strip + official header
+# ─────────────────────────────────────────────
+st.markdown("""
+<div class="tricolour-strip"><div class="strip-saffron"></div><div class="strip-white"></div><div class="strip-green"></div></div>
+<div class="gov-header">
+    <div class="gov-header-left">
+        <div class="emblem-badge">🇮🇳</div>
+        <div class="gov-header-title">
+            <div class="gov-header-eyebrow">Government of India · Ministry of Environment, Forest &amp; Climate Change</div>
+            <div class="gov-header-name">Smart Waste Management System</div>
+        </div>
+    </div>
+    <div class="gov-header-right">
+        <span class="gov-pill">Digital India</span>
+        <span class="gov-pill">EN / हिं</span>
+    </div>
+</div>
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
 # Hero
 # ─────────────────────────────────────────────
 st.markdown("""
-<div class="dash-hero">
-    <div class="dash-eyebrow">⬡ SWMS / Analytics & Reporting Module</div>
-    <div class="dash-title">Waste Stream <span>Intelligence</span></div>
-    <div class="dash-sub">Longitudinal detection analytics · Source-wise distribution · Biodegradability classification</div>
+<div class="hero-block">
+    <div class="hero-ref">Circular No. SWMS/2026/AI-RPT &nbsp;·&nbsp; Analytics &amp; Reporting Module</div>
+    <div class="hero-title">Waste Stream <span>Intelligence</span></div>
+    <div class="hero-sub">
+        Longitudinal detection analytics, source-wise distribution, and biodegradability classification
+        drawn from the AI Detection Portal's recorded observations.
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -272,14 +380,14 @@ st.markdown("""
 # Sidebar
 # ─────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("### 🔗 Navigation")
-    st.page_link("app.py", label="🏠 Back to Detection App", icon="🏠")
+    st.markdown("### Navigation")
+    st.page_link("app.py", label="🏠 Back to Detection Console", icon="🏠")
     st.markdown("---")
-    st.markdown("### 🗄️ Data Management")
-    if st.button("🔄 Refresh Data", use_container_width=True):
+    st.markdown("### Data Management")
+    if st.button("🔄 Refresh Data", width='stretch'):
         st.rerun()
     st.markdown("")
-    if st.button("🗑️ Clear All History", use_container_width=True):
+    if st.button("🗑️ Clear All History", width='stretch'):
         clear_all_detections()
         st.success("History cleared!")
         st.rerun()
@@ -298,19 +406,22 @@ df_recent = pd.DataFrame(recent) if recent else pd.DataFrame()
 df_all    = pd.DataFrame(all_det) if all_det else pd.DataFrame()
 
 # ─────────────────────────────────────────────
-# Plotly theme
+# Plotly theme — light, matches paper-white portal
 # ─────────────────────────────────────────────
 PLOTLY_BASE = dict(
     paper_bgcolor="rgba(0,0,0,0)",
     plot_bgcolor="rgba(0,0,0,0)",
-    font=dict(family="DM Sans, sans-serif", color="#6E7E9A"),
+    font=dict(family="Source Sans 3, sans-serif", color="#5B6B7C"),
     margin=dict(t=20, b=20, l=10, r=10),
 )
+
+GRID_COLOR   = "#EDEFF3"
+LINE_COLOR   = "#DCE1E8"
 
 # ─────────────────────────────────────────────
 # KPI Cards
 # ─────────────────────────────────────────────
-st.markdown('<div class="section-label">▸ Operational Overview</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-label">Operational Overview</div>', unsafe_allow_html=True)
 
 c1, c2, c3, c4, c5 = st.columns(5)
 kpi_data = [
@@ -341,49 +452,49 @@ if not df_dist.empty:
 
     # ── Donut — Bio vs Non-Bio ──────────────────────────────────────
     with chart_col1:
-        st.markdown('<div class="section-label">▸ Biodegradability Split</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-label">Biodegradability Split</div>', unsafe_allow_html=True)
         st.markdown('<div class="chart-card"><div class="chart-title">Waste Nature Distribution</div>', unsafe_allow_html=True)
         nature_labels = list(nature.keys())
         nature_values = list(nature.values())
         color_map_donut = {
-            "Biodegradable":     "#50C878",
-            "Non-Biodegradable": "#F5A623",
-            "Hazardous":         "#DC3C50",
-            "Unknown":           "#3A5070",
+            "Biodegradable":     "#15803D",
+            "Non-Biodegradable": "#E17A1D",
+            "Hazardous":         "#B91C1C",
+            "Unknown":           "#8593A3",
         }
-        donut_colors = [color_map_donut.get(l, "#3A5070") for l in nature_labels]
+        donut_colors = [color_map_donut.get(l, "#8593A3") for l in nature_labels]
 
         fig_donut = go.Figure(data=[go.Pie(
             labels=nature_labels,
             values=nature_values,
             hole=0.62,
-            marker=dict(colors=donut_colors, line=dict(color="#070D1A", width=3)),
-            textfont=dict(size=11, color="#D0D8E8"),
+            marker=dict(colors=donut_colors, line=dict(color="#FFFFFF", width=3)),
+            textfont=dict(size=11, color="#263241"),
             hovertemplate="<b>%{label}</b><br>Count: %{value}<br>Share: %{percent}<extra></extra>",
         )])
         fig_donut.add_annotation(
             text=f"<b>{sum(nature_values)}</b><br><span style='font-size:10px;'>TOTAL</span>",
-            x=0.5, y=0.5, font=dict(size=16, color="#EDF2FA"),
+            x=0.5, y=0.5, font=dict(size=16, color="#14213D"),
             showarrow=False,
         )
         fig_donut.update_layout(
             **PLOTLY_BASE,
             legend=dict(orientation="h", yanchor="bottom", y=-0.25,
-                        font=dict(color="#6E7E9A", size=11)),
+                        font=dict(color="#5B6B7C", size=11)),
             height=280,
         )
-        st.plotly_chart(fig_donut, use_container_width=True)
+        st.plotly_chart(fig_donut, width='stretch')
         st.markdown('</div>', unsafe_allow_html=True)
 
     # ── Bar — class distribution ────────────────────────────────────
     with chart_col2:
-        st.markdown('<div class="section-label">▸ Detection Distribution</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-label">Detection Distribution</div>', unsafe_allow_html=True)
         st.markdown('<div class="chart-card"><div class="chart-title">Count by Waste Class</div>', unsafe_allow_html=True)
         color_map_bar = {
-            "Biodegradable":     "#50C878",
-            "Non-Biodegradable": "#F5A623",
-            "Hazardous":         "#DC3C50",
-            "Unknown":           "#3A5070",
+            "Biodegradable":     "#15803D",
+            "Non-Biodegradable": "#E17A1D",
+            "Hazardous":         "#B91C1C",
+            "Unknown":           "#8593A3",
         }
         fig_bar = px.bar(
             df_dist.sort_values("count", ascending=False),
@@ -393,30 +504,30 @@ if not df_dist.empty:
             labels={"class_name": "", "count": "Count", "waste_nature": "Nature"},
             text="count",
         )
-        fig_bar.update_traces(textposition="outside", textfont=dict(size=10, color="#6E7E9A"),
+        fig_bar.update_traces(textposition="outside", textfont=dict(size=10, color="#5B6B7C"),
                               marker_line_width=0)
         fig_bar.update_layout(
             **PLOTLY_BASE,
-            xaxis=dict(tickangle=-35, gridcolor="#0A1628", tickfont=dict(size=10), linecolor="#0F2545"),
-            yaxis=dict(gridcolor="#0A1628", linecolor="#0F2545"),
-            legend=dict(orientation="h", yanchor="bottom", y=-0.45, font=dict(color="#6E7E9A", size=11)),
+            xaxis=dict(tickangle=-35, gridcolor=GRID_COLOR, tickfont=dict(size=10), linecolor=LINE_COLOR),
+            yaxis=dict(gridcolor=GRID_COLOR, linecolor=LINE_COLOR),
+            legend=dict(orientation="h", yanchor="bottom", y=-0.45, font=dict(color="#5B6B7C", size=11)),
             legend_title_text="",
             height=280,
             bargap=0.25,
         )
-        st.plotly_chart(fig_bar, use_container_width=True)
+        st.plotly_chart(fig_bar, width='stretch')
         st.markdown('</div>', unsafe_allow_html=True)
 
     # ── Confidence scatter ──────────────────────────────────────────
     if not df_all.empty and "timestamp" in df_all.columns:
-        st.markdown('<div class="section-label">▸ Confidence Timeline</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-label">Confidence Timeline</div>', unsafe_allow_html=True)
         st.markdown('<div class="chart-card"><div class="chart-title">Model Confidence over Time</div>', unsafe_allow_html=True)
         df_all["timestamp"] = pd.to_datetime(df_all["timestamp"])
         scatter_color_map = {
-            "Biodegradable":     "#50C878",
-            "Non-Biodegradable": "#F5A623",
-            "Hazardous":         "#DC3C50",
-            "Unknown":           "#3A5070",
+            "Biodegradable":     "#15803D",
+            "Non-Biodegradable": "#E17A1D",
+            "Hazardous":         "#B91C1C",
+            "Unknown":           "#8593A3",
         }
         fig_line = px.scatter(
             df_all.sort_values("timestamp"),
@@ -424,26 +535,25 @@ if not df_dist.empty:
             color="waste_nature",
             color_discrete_map=scatter_color_map,
             labels={"timestamp": "", "confidence": "Confidence", "waste_nature": "Nature"},
-            opacity=0.7,
+            opacity=0.75,
             hover_data=["class_name"],
         )
-        # Add trend line
         fig_line.update_traces(marker=dict(size=6, line=dict(width=0)))
         fig_line.update_layout(
             **PLOTLY_BASE,
-            xaxis=dict(gridcolor="#0A1628", linecolor="#0F2545", tickfont=dict(size=10)),
-            yaxis=dict(gridcolor="#0A1628", linecolor="#0F2545", range=[0, 1],
+            xaxis=dict(gridcolor=GRID_COLOR, linecolor=LINE_COLOR, tickfont=dict(size=10)),
+            yaxis=dict(gridcolor=GRID_COLOR, linecolor=LINE_COLOR, range=[0, 1],
                        tickformat=".0%", tickfont=dict(size=10)),
-            legend=dict(orientation="h", yanchor="bottom", y=-0.25, font=dict(color="#6E7E9A", size=11)),
+            legend=dict(orientation="h", yanchor="bottom", y=-0.25, font=dict(color="#5B6B7C", size=11)),
             legend_title_text="",
             height=240,
         )
-        st.plotly_chart(fig_line, use_container_width=True)
+        st.plotly_chart(fig_line, width='stretch')
         st.markdown('</div>', unsafe_allow_html=True)
 
     # ── Source breakdown ────────────────────────────────────────────
     if not df_all.empty and "source" in df_all.columns:
-        st.markdown('<div class="section-label">▸ Detection Source Analysis</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-label">Detection Source Analysis</div>', unsafe_allow_html=True)
         src_col1, src_col2 = st.columns([1, 2], gap="medium")
 
         with src_col1:
@@ -452,11 +562,11 @@ if not df_dist.empty:
             src_counts.columns = ["Source", "Count"]
             fig_src = px.pie(
                 src_counts, names="Source", values="Count", hole=0.5,
-                color_discrete_sequence=["#00B4A6", "#F5A623", "#50A0DC"],
+                color_discrete_sequence=["#0F4C81", "#E17A1D", "#0E7490"],
             )
             fig_src.update_layout(**PLOTLY_BASE, height=220,
-                                  legend=dict(orientation="h", y=-0.2, font=dict(size=11, color="#6E7E9A")))
-            st.plotly_chart(fig_src, use_container_width=True)
+                                  legend=dict(orientation="h", y=-0.2, font=dict(size=11, color="#5B6B7C")))
+            st.plotly_chart(fig_src, width='stretch')
             st.markdown('</div>', unsafe_allow_html=True)
 
         with src_col2:
@@ -466,7 +576,7 @@ if not df_dist.empty:
                                            values="confidence", aggfunc="count", fill_value=0)
                 fig_heat = px.imshow(
                     pivot,
-                    color_continuous_scale=[[0, "#040912"], [0.5, "#004A44"], [1, "#00B4A6"]],
+                    color_continuous_scale=[[0, "#F5F6F8"], [0.5, "#7BA7CC"], [1, "#0F4C81"]],
                     aspect="auto",
                     text_auto=True,
                 )
@@ -475,19 +585,19 @@ if not df_dist.empty:
                     coloraxis_showscale=False,
                     xaxis=dict(tickfont=dict(size=10)), yaxis=dict(tickfont=dict(size=10)),
                 )
-                st.plotly_chart(fig_heat, use_container_width=True)
+                st.plotly_chart(fig_heat, width='stretch')
             st.markdown('</div>', unsafe_allow_html=True)
 
 else:
     st.markdown("""
-    <div style="background:#040912; border:2px dashed #0F2545; border-radius:12px;
-                padding:4rem 2rem; text-align:center; color:#2A3A4A; margin:1rem 0;">
-        <div style="font-size:2.5rem; margin-bottom:0.8rem;">📭</div>
-        <div style="font-family:'Space Grotesk',sans-serif; font-size:1rem; font-weight:600; color:#3A5070;">
+    <div style="background:#FFFFFF; border:2px dashed #C6CEDA; border-radius:6px;
+                padding:4rem 2rem; text-align:center; color:#8593A3; margin:1rem 0;">
+        <div style="font-size:2.4rem; margin-bottom:1rem;">📭</div>
+        <div style="font-family:'Fraunces',serif; font-size:1.05rem; color:#14213D; font-weight:600;">
             No detection data available
         </div>
-        <div style="font-size:0.75rem; font-family:'DM Mono',monospace; margin-top:0.4rem;
-                    letter-spacing:0.1em; color:#1A2A3A;">
+        <div style="font-size:0.78rem; font-family:'IBM Plex Mono',monospace; margin-top:0.4rem;
+                    letter-spacing:0.06em; color:#A0ACB9;">
             RUN THE CLASSIFIER ON IMAGES OR WEBCAM FEED TO POPULATE THIS DASHBOARD
         </div>
     </div>
@@ -496,14 +606,14 @@ else:
 # ─────────────────────────────────────────────
 # Activity log
 # ─────────────────────────────────────────────
-st.markdown('<div class="section-label">▸ Detection Activity Log</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-label">Detection Activity Log</div>', unsafe_allow_html=True)
 
 if not df_recent.empty:
     NATURE_COLORS = {
-        'Biodegradable':     {'bg': '#0D3320', 'text': '#50C878'},
-        'Non-Biodegradable': {'bg': '#2A1A08', 'text': '#F5A623'},
-        'Hazardous':         {'bg': '#2A0A0A', 'text': '#DC3C50'},
-        'Unknown':           {'bg': '#1A1E24', 'text': '#78828C'},
+        'Biodegradable':     {'bg': '#ECFDF3', 'text': '#15803D'},
+        'Non-Biodegradable': {'bg': '#FFF7ED', 'text': '#C2410C'},
+        'Hazardous':         {'bg': '#FEF2F2', 'text': '#B91C1C'},
+        'Unknown':           {'bg': '#F3F4F6', 'text': '#4B5563'},
     }
 
     def style_nature(val):
@@ -515,8 +625,8 @@ if not df_recent.empty:
     df_show["confidence"] = df_show["confidence"].apply(lambda x: f"{x*100:.1f}%")
     df_show.columns = ["ID", "Timestamp", "Source", "Waste Type", "Confidence", "Bin", "Nature"]
 
-    styled = df_show.style.applymap(style_nature, subset=["Nature"])
-    st.dataframe(styled, use_container_width=True, height=340)
+    styled = df_show.style.map(style_nature, subset=["Nature"])
+    st.dataframe(styled, width='stretch', height=340)
     st.markdown("<br>", unsafe_allow_html=True)
 
     tab_bio, tab_nonbio, tab_haz = st.tabs([
@@ -524,9 +634,9 @@ if not df_recent.empty:
     ])
 
     for tab, nature_val, label_color, accent in [
-        (tab_bio,    "Biodegradable",     "#50C878", "success"),
-        (tab_nonbio, "Non-Biodegradable", "#F5A623", "warning"),
-        (tab_haz,    "Hazardous",         "#DC3C50", "error"),
+        (tab_bio,    "Biodegradable",     "#15803D", "success"),
+        (tab_nonbio, "Non-Biodegradable", "#E17A1D", "warning"),
+        (tab_haz,    "Hazardous",         "#B91C1C", "error"),
     ]:
         with tab:
             df_sub = df_recent[df_recent["waste_nature"] == nature_val].copy()
@@ -537,15 +647,15 @@ if not df_recent.empty:
 
                 st.markdown(f"""
                 <div style="display:flex; gap:1rem; margin-bottom:0.8rem; align-items:center;">
-                    <span style="font-family:'Space Grotesk',sans-serif; font-size:1.5rem;
+                    <span style="font-family:'Fraunces',serif; font-size:1.4rem;
                                  font-weight:700; color:{label_color};">{len(df_sub)}</span>
-                    <span style="font-family:'DM Mono',monospace; font-size:0.7rem; color:#3A5070;
+                    <span style="font-family:'IBM Plex Mono',monospace; font-size:0.7rem; color:#5B6B7C;
                                  letter-spacing:0.1em; text-transform:uppercase;">
                         {nature_val.upper()} ITEMS DETECTED
                     </span>
                 </div>""", unsafe_allow_html=True)
 
-                st.dataframe(df_sub, use_container_width=True, hide_index=True)
+                st.dataframe(df_sub, width='stretch', hide_index=True)
 
                 st.markdown("**Frequency by waste class**")
                 summary_df = df_sub.groupby("Waste Type").size().reset_index(name="Count").sort_values("Count", ascending=False)
@@ -557,22 +667,22 @@ if not df_recent.empty:
                 fig_mini.update_traces(textposition="outside", marker_line_width=0)
                 fig_mini.update_layout(
                     **PLOTLY_BASE, height=180,
-                    xaxis=dict(tickfont=dict(size=10), gridcolor="#0A1628"),
-                    yaxis=dict(gridcolor="#0A1628"),
+                    xaxis=dict(tickfont=dict(size=10), gridcolor=GRID_COLOR),
+                    yaxis=dict(gridcolor=GRID_COLOR),
                     showlegend=False,
                 )
-                st.plotly_chart(fig_mini, use_container_width=True)
+                st.plotly_chart(fig_mini, width='stretch')
             else:
                 st.markdown(f"""
-                <div style="padding:2rem; text-align:center; color:#1A2A3A;
-                            font-family:'DM Mono',monospace; font-size:0.75rem; letter-spacing:0.1em;">
+                <div style="padding:2rem; text-align:center; color:#A0ACB9;
+                            font-family:'IBM Plex Mono',monospace; font-size:0.75rem; letter-spacing:0.1em;">
                     NO {nature_val.upper()} ITEMS IN RECENT HISTORY
                 </div>""", unsafe_allow_html=True)
 
 else:
     st.markdown("""
-    <div style="padding:2rem; text-align:center; color:#1A2A3A;
-                font-family:'DM Mono',monospace; font-size:0.75rem; letter-spacing:0.1em;">
+    <div style="padding:2rem; text-align:center; color:#A0ACB9;
+                font-family:'IBM Plex Mono',monospace; font-size:0.75rem; letter-spacing:0.1em;">
         ACTIVITY LOG EMPTY — NO DETECTIONS RECORDED YET
     </div>""", unsafe_allow_html=True)
 
@@ -580,7 +690,7 @@ else:
 # Export
 # ─────────────────────────────────────────────
 if not df_all.empty:
-    st.markdown('<div class="section-label">▸ Data Export</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-label">Data Export</div>', unsafe_allow_html=True)
     exp_col1, exp_col2 = st.columns([2, 3])
     with exp_col1:
         csv = df_all.to_csv(index=False).encode("utf-8")
@@ -589,15 +699,17 @@ if not df_all.empty:
             data=csv,
             file_name="swms_waste_detections.csv",
             mime="text/csv",
-            use_container_width=True,
+            width='stretch',
         )
 
 # ─────────────────────────────────────────────
 # Footer
 # ─────────────────────────────────────────────
 st.markdown("""
-<div class="gov-footer">
-    Smart Waste Management System &nbsp;·&nbsp; Analytics Module &nbsp;·&nbsp;
-    Ministry of Environment, Forest &amp; Climate Change &nbsp;·&nbsp; Government of India
+<div class="gov-footer-wrap">
+    <div class="gov-footer">
+        Smart Waste Management System &nbsp;·&nbsp; Analytics Module &nbsp;·&nbsp;
+        Ministry of Environment, Forest &amp; Climate Change &nbsp;·&nbsp; Government of India
+    </div>
 </div>
 """, unsafe_allow_html=True)
