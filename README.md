@@ -323,27 +323,6 @@ python -m streamlit run app.py --server.port 8502
 
 ---
 
-## 👥 Working as a Team
-
-**First time (teammate):**
-```bash
-git clone https://github.com/<your-username>/<your-repo-name>.git
-cd <your-repo-name>
-python -m venv venv
-venv\Scripts\activate
-python -m pip install -r requirements.txt
-python -m streamlit run app.py
-```
-
-**Getting the latest changes:**
-```bash
-git pull
-python -m pip install -r requirements.txt   # only if requirements.txt changed
-```
-
-**Making changes:** create a branch (`git checkout -b feature-name`), commit and push it, open a pull request on GitHub, and merge after a teammate has reviewed it. Don't commit `venv/`, `__pycache__/`, `waste_data.db` or any API keys.
-
----
 
 ## 🔮 Future Enhancements
 
@@ -368,12 +347,3 @@ python -m pip install -r requirements.txt   # only if requirements.txt changed
 - **Pillow / NumPy**: image handling
 
 ---
-
-## 📄 License
-
-Released under the MIT License. See the `LICENSE` file for details.
-
-## ✍️ Authors
-
-- `<Your Name>` ([@your-github-username](https://github.com/your-github-username))
-- `<Teammate Name>` ([@teammate-github-username](https://github.com/teammate-github-username))
