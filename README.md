@@ -20,10 +20,10 @@ An AI-powered Streamlit application that detects waste items from a **live webca
 4. [Quick Start](#-quick-start)
 5. [Using the Application](#-using-the-application)
 6. [Model Information](#-model-information)
-7. [Project Structure](#-project-structure)
-8. [Configuration](#-configuration)
-9. [Troubleshooting](#-troubleshooting)
-10. [Working as a Team](#-working-as-a-team)
+7. [Known Limitations](#-known-limitations)
+8. [Project Structure](#-project-structure)
+9. [Configuration](#-configuration)
+10. [Troubleshooting](#-troubleshooting)
 11. [Future Enhancements](#-future-enhancements)
 
 ---
@@ -32,11 +32,12 @@ An AI-powered Streamlit application that detects waste items from a **live webca
 
 - **Live webcam detection**: real-time bounding boxes with class, confidence and bin guidance
 - **Photo upload analysis**: drag and drop JPG, PNG, BMP or GIF images
+- **Mixed-waste photos**: every prediction in a photo is listed (not just the best one), each tagged High / Medium / Low confidence
+- **Zoomed-in tile scan**: a photo is analysed whole and as four overlapping zoomed tiles, then merged, so small items in cluttered piles are not missed
 - **8 waste classes**: plastic, metal, glass, e-waste, medical waste, paper, cardboard, organic waste
-- **Two-stage pipeline**: YOLOv8m finds and labels objects, and an optional ResNet50 double-checks biodegradability on each cropped object
 - **Biodegradable / Non-biodegradable / Hazardous** label for every detection
 - **Bin recommendation** and schedule reference for each class
-- **Analytics dashboard**: totals, class distribution, confidence over time, source split and a downloadable CSV of the history
+- **Analytics dashboard**: totals, class distribution, confidence over time, source split, per-image reports and a downloadable CSV of the history
 - **Adjustable confidence threshold** and camera selection in the sidebar
 - **Works on CPU**, no GPU required
 
@@ -46,23 +47,20 @@ An AI-powered Streamlit application that detects waste items from a **live webca
 
 ```mermaid
 flowchart LR
-    A[Webcam frame or uploaded photo] --> B[YOLOv8m detector<br/>boxes + 8-class label]
-    B --> C[Crop each box]
-    C --> D[ResNet50<br/>biodegradable vs non-biodegradable]
-    B --> E[Class lookup<br/>class → nature]
-    D --> F{Fusion}
-    E --> F
-    F --> G[Streamlit UI<br/>bin, nature, schedule]
-    F --> H[(SQLite database)]
-    H --> I[Analytics dashboard]
+    A[Webcam frame or uploaded photo] --> B[YOLOv8m detector]
+    B -->|photo only| C[Whole image + 4 zoomed tiles<br/>merged with NMS]
+    B -->|webcam| D[Single pass per frame]
+    C --> E[Class lookup<br/>class → bin + nature]
+    D --> E
+    E --> F[Streamlit UI<br/>boxes, bin, nature]
+    E --> G[(SQLite database)]
+    G --> H[Analytics dashboard]
 ```
 
-1. **Detection:** YOLOv8m finds every waste item and predicts one of 8 classes.
-2. **Nature decision:** each class maps to a nature (for example paper → biodegradable). If the ResNet50 weights are present, each cropped item is also classified by ResNet50.
-3. **Fusion:** if the class mapping and ResNet50 agree, that answer is used. If they disagree, the more confident one wins. `medical_waste` is always labelled **Hazardous**.
-4. **Output:** the UI shows the bin and nature, and the detection is saved to SQLite for the dashboard.
-
-If `models/resnet50_bio_best.pt` is missing, the app still works and uses the class mapping alone.
+1. **Detection:** YOLOv8m finds waste items and predicts one of 8 classes.
+2. **Photo uploads** are run on the full image plus four overlapping zoomed tiles. Overlapping boxes of the same class are merged, and all remaining predictions are listed.
+3. **Nature decision:** each class maps to a nature (for example paper → biodegradable). `medical_waste` is always **Hazardous**.
+4. **Output:** the UI shows the bin and nature, and the detections are saved to SQLite for the dashboard. All items found in one uploaded photo are saved under one image report ID.
 
 ---
 
@@ -92,7 +90,7 @@ If `models/resnet50_bio_best.pt` is missing, the app still works and uses the cl
 | **Webcam** | Optional, only for live detection |
 | **Disk space** | About 3 GB for the Python packages |
 
-Check your Python version with `python --version`.
+Check your Python version with `python --version`. If you have several Python versions on Windows, `py -0` lists them.
 
 ### 1. Clone the repository
 
@@ -101,24 +99,32 @@ git clone https://github.com/<your-username>/<your-repo-name>.git
 cd <your-repo-name>
 ```
 
+If the model file is stored with **Git LFS**, also run:
+
+```bash
+git lfs install
+git lfs pull
+```
+
 ### 2. Create and activate a virtual environment
 
 **Windows (Command Prompt)**
 ```bash
-python -m venv venv
+py -3.11 -m venv venv
 venv\Scripts\activate
 ```
+(If `py -3.11` is not found, use `py -3.10`, or `python -m venv venv` when `python --version` already shows 3.10 or 3.11.)
 
 **Windows (PowerShell)**
 ```powershell
-python -m venv venv
+py -3.11 -m venv venv
 venv\Scripts\Activate.ps1
 ```
 If PowerShell blocks the script, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once, or use Command Prompt instead.
 
 **macOS / Linux**
 ```bash
-python3 -m venv venv
+python3.11 -m venv venv
 source venv/bin/activate
 ```
 
@@ -135,19 +141,27 @@ This takes several minutes because PyTorch is a large download.
 
 > **Linux without an NVIDIA GPU:** add `--extra-index-url https://download.pytorch.org/whl/cpu` to the install command to get the smaller CPU build of PyTorch. Windows installs the CPU build by default.
 
-### 4. Add the model files
+**Verify the installation** before running the app:
 
-Place the trained weights in the `models/` folder:
+```bash
+python -c "import streamlit, ultralytics, torch, cv2, pandas, plotly, pyarrow; print('All packages OK')"
+```
+
+If this prints `All packages OK`, continue. If it fails, see [Troubleshooting](#-troubleshooting).
+
+### 4. Add the model file
+
+The app needs the trained YOLOv8m weights at exactly this path:
 
 ```
 models/
-├── best.pt                  # YOLOv8m detector (required)
-└── resnet50_bio_best.pt     # ResNet50 biodegradability classifier (optional)
+└── best.pt        # YOLOv8m detector, 8 classes (required)
 ```
 
-- `best.pt` is **required**. Without it the app opens but shows "The detection model could not be loaded".
-- `resnet50_bio_best.pt` is **optional**. Without it, the app uses the class mapping for the biodegradable / non-biodegradable decision.
-- If the files are not in the repository (GitHub rejects files over 100 MB), download them from: `<add-your-download-link-here>`
+- Create the `models` folder if it does not exist (Git does not store empty folders).
+- Without `best.pt` the app opens but shows "The detection model could not be loaded".
+- If the file is not in the repository (GitHub rejects files over 100 MB), download it from: `<add-your-download-link-here>`
+- The weights must be the **8-class** model (plastic, metal, glass, e_waste, medical_waste, paper, cardboard, organic_waste). If the class list differs, the app shows a warning at the top of the page.
 
 ### 5. Run the application
 
@@ -157,15 +171,9 @@ python -m streamlit run app.py
 
 The app opens in your browser at **http://localhost:8501**. To stop it, press `Ctrl + C` in the terminal.
 
-The first detection can take a few seconds while the models load. After that they stay in memory.
+The first detection can take a few seconds while the model loads. After that it stays in memory.
 
-### Check your installed versions (optional)
-
-```bash
-python -m pip list
-```
-
-Tested versions:
+### Tested versions
 
 | Package | Version |
 |---------|---------|
@@ -177,10 +185,27 @@ Tested versions:
 | pillow | 10.2.0 |
 | pandas | 2.3.3 |
 | plotly | 6.7.0 |
+| pyarrow | 16.1.0 |
+
+Use `python -m pip list` to compare with your installation.
 
 ---
 
 ## 🎯 Using the Application
+
+### 📁 Photo Upload & Analysis
+
+1. Open the **Photo Upload & Analysis** tab.
+2. Upload a photo (PNG, JPG, JPEG, BMP or GIF).
+3. The **Classification Report** shows:
+   - a summary line, for example *Plastic ×3, Paper ×2, Organic Waste ×1*
+   - a card for every prediction with its bin, schedule, nature and confidence level (High ≥ 50%, Medium 25–50%, Low < 25%)
+   - the annotated photo with numbered boxes
+4. Every prediction is saved to the database as one image report and appears on the dashboard.
+
+The sidebar option **Show ALL model predictions** (on by default) lists every prediction down to 0.1% confidence. Predictions tagged **Low** are often wrong, so treat them with caution. Turn the option off to apply the **Confidence Threshold** slider instead.
+
+If nothing is found, a **Diagnostics** box shows the model's classes and its raw top predictions.
 
 ### 📷 Live Camera Detection
 
@@ -190,11 +215,7 @@ Tested versions:
 4. Detected items are boxed on the video, and the panel on the right lists each item with its confidence, bin and nature.
 5. Click **⏹ Stop** to release the camera.
 
-### 📁 Photo Upload & Analysis
-
-1. Open the **Photo Upload & Analysis** tab.
-2. Upload a photo (PNG, JPG, JPEG, BMP or GIF).
-3. The **Classification Report** lists each detected item with its bin, schedule and nature, and shows the annotated image with bounding boxes.
+Uploading a new photo automatically stops the live camera, because the camera loop would otherwise block the upload analysis.
 
 ### 📊 Analytics Dashboard
 
@@ -205,14 +226,16 @@ Open **Analytics Dashboard** from the sidebar to see:
 - Waste-nature split and detections per class
 - Model confidence over time
 - Webcam vs upload split and a class × source heatmap
-- An activity log with separate tabs per nature
-- **Download Full Detection History (CSV)** and a **Clear All History** button
+- **Per-Image Waste Reports**: for each uploaded photo, how many items were found, which waste types, the bio / non-bio / hazardous counts, average confidence and how many items were low confidence
+- An activity log with a confidence level for each row and separate tabs per nature
+- **Download Full Detection History (CSV)**, **Remove Old-Model Records** and **Clear All History** buttons
 
 ### ⚙️ Sidebar Settings
 
 | Setting | What it does |
 |---------|--------------|
-| **Confidence Threshold** (default 0.25) | Lower shows more detections but more false positives. Higher shows fewer, more certain detections. |
+| **Confidence Threshold** (default 0.20) | Lower shows more detections but more false positives. Used for the live camera, and for photos when "Show ALL" is off. |
+| **Show ALL model predictions** (default on) | Photo upload lists every prediction, even at very low confidence. |
 | **Camera Index** | Selects which camera to use for live detection. |
 
 ---
@@ -222,36 +245,36 @@ Open **Analytics Dashboard** from the sidebar to see:
 | Item | Details |
 |------|---------|
 | **Detector** | YOLOv8m (Ultralytics), 8 classes, 640 px input |
-| **Biodegradability classifier** | ResNet50 (ImageNet transfer learning), 224 px crops, 2 classes (optional stage) |
-| **Training platform** | Kaggle (Tesla T4 GPU) |
+| **Training platform** | Kaggle (Tesla T4 GPU), Ultralytics 8.4.175, 170 epochs |
 | **Dataset** | Custom 8-class YOLO-format dataset (`balanced_v3`), class-balanced over three iterations; 6,502 train / 1,190 validation / 904 test images |
-| **Fusion rule** | Agree → accept. Disagree → trust the more confident model. `medical_waste` → always Hazardous. |
 
 ### Results
 
-<!-- Fill these from the metrics.json / results.csv produced by the final training run -->
+Final training run: 170 epochs in about 8 hours on a Tesla T4 (Ultralytics 8.4.175, PyTorch 2.11, Kaggle). Scores below are on the **validation split** (1,190 images, 1,859 labelled objects).
 
-| Metric (YOLOv8m, test split) | Value |
-|------------------------------|-------|
-| Precision | — |
-| Recall | — |
-| mAP@0.5 | — |
-| mAP@0.5:0.95 | — |
+| Metric (YOLOv8m, validation split) | Value |
+|------------------------------------|-------|
+| Precision | 0.910 |
+| Recall | 0.877 |
+| mAP@0.5 | 0.924 |
+| mAP@0.5:0.95 | 0.740 |
+| Speed (T4 GPU) | about 10 ms per image |
 
-| Biodegradability stage | Class lookup only | ResNet50 only | Fusion |
-|------------------------|-------------------|---------------|--------|
-| Accuracy on matched detections | — | — | — |
+Per-class results:
 
-### Retraining
+| Class | Images | Instances | Precision | Recall | mAP@0.5 | mAP@0.5:0.95 |
+|-------|--------|-----------|-----------|--------|---------|--------------|
+| plastic | 184 | 250 | 0.970 | 0.996 | 0.987 | 0.880 |
+| metal | 103 | 149 | 0.873 | 0.765 | 0.857 | 0.776 |
+| glass | 44 | 252 | 0.880 | 0.821 | 0.892 | 0.757 |
+| e_waste | 212 | 245 | 0.901 | 0.882 | 0.921 | 0.639 |
+| medical_waste | 171 | 250 | 0.862 | 0.825 | 0.861 | 0.618 |
+| paper | 241 | 250 | 0.941 | 0.952 | 0.965 | 0.896 |
+| cardboard | 174 | 209 | 0.915 | 0.900 | 0.970 | 0.681 |
+| organic_waste | 61 | 254 | 0.936 | 0.874 | 0.941 | 0.675 |
 
-The training notebooks are in the `notebooks/` folder and are designed for Kaggle:
 
-- `yolov8m_crashproof_training.ipynb` trains the detector. Run it with **Save & Run All (Commit)** so training continues even if your internet drops.
-- `resnet50_yolov8_pipeline.ipynb` trains the ResNet50 classifier and compares class lookup, ResNet50 and fusion.
 
-After training, copy the new weights into `models/` and restart the app.
-
----
 
 ## 📁 Project Structure
 
@@ -259,7 +282,6 @@ After training, copy the new weights into `models/` and restart the app.
 <your-repo-name>/
 │
 ├── app.py                        # Main Streamlit app (live camera + photo upload)
-├── waste_pipeline.py             # YOLOv8m + ResNet50 + fusion inference module
 ├── database.py                   # SQLite storage and dashboard queries
 ├── requirements.txt              # Pinned Python dependencies
 ├── README.md                     # This file
@@ -269,15 +291,9 @@ After training, copy the new weights into `models/` and restart the app.
 │   └── dashboard.py              # Analytics dashboard page
 │
 ├── models/
-│   ├── best.pt                   # YOLOv8m detector (required)
-│   └── resnet50_bio_best.pt      # ResNet50 classifier (optional)
+│   └── best.pt                   # YOLOv8m 8-class detector (required)
 │
-├── notebooks/                    # Kaggle training notebooks
-│   ├── yolov8m_crashproof_training.ipynb
-│   └── resnet50_yolov8_pipeline.ipynb
-│
-├── .streamlit/
-│   └── config.toml               # Streamlit settings (optional)
+├── notebooks/                    # Kaggle training notebooks (if included)
 │
 └── waste_data.db                 # Detection history (created automatically, not committed)
 ```
@@ -288,19 +304,17 @@ After training, copy the new weights into `models/` and restart the app.
 
 | What | Where | Notes |
 |------|-------|-------|
-| Detector weights path | `load_model()` in `app.py` | Default `models/best.pt` |
-| ResNet50 weights path | `load_model()` in `app.py` | Default `models/resnet50_bio_best.pt` |
-| Max ResNet50 crops per frame | `max_resnet_crops` in `waste_pipeline.py` | Default 8. Lower it if live detection feels slow on CPU. |
-| How often live detections are saved | `SAVE_EVERY_N_FRAMES` in `app.py` | Default 30 frames |
+| Detector weights path | `MODEL_PATH` in `app.py` | Default `models/best.pt` |
+| Live-camera save interval | `SAVE_EVERY_SECONDS` in `app.py` | Default 2 seconds, so the dashboard is not flooded |
+| Tile size for photo analysis | `detect_multiscale()` in `app.py` | Tiles are 60% of the image; set the tile loop to run only the full image to speed up analysis |
 | Database file | `DB_PATH` in `database.py` | Default `waste_data.db` next to the code |
-| Theme and server options | `.streamlit/config.toml` | Optional |
 
 **Run on a different port:**
 ```bash
 python -m streamlit run app.py --server.port 8502
 ```
 
-**Database:** detections are stored in SQLite with these columns: `id`, `timestamp`, `source` (webcam or upload), `class_name`, `confidence`, `bin_label`, `waste_nature`. Delete `waste_data.db` (or use **Clear All History** on the dashboard) to start fresh.
+**Database:** detections are stored in SQLite with these columns: `id`, `timestamp`, `source` (webcam or upload), `class_name`, `confidence`, `bin_label`, `waste_nature`, `image_id` and `image_name` (the last two group the items of one uploaded photo). A database from an older version is upgraded automatically. Delete `waste_data.db` (or use **Clear All History** on the dashboard) to start fresh.
 
 ---
 
@@ -310,22 +324,29 @@ python -m streamlit run app.py --server.port 8502
 |---------|-----|
 | `pip install` fails at `torch==2.1.2` ("No matching distribution") | You are on Python 3.12 or newer. Install Python 3.10 or 3.11 and recreate the virtual environment. |
 | `ModuleNotFoundError: plotly` (or another package) | The environment is not activated or the install did not finish. Activate `venv` and run `python -m pip install -r requirements.txt` again. |
-| `The detection model could not be loaded` | Check that `models/best.pt` exists and the file is not empty. |
+| Dashboard crashes with an error at `import pyarrow` (`pyarrow/lib.pyx`) | pyarrow is pinned in `requirements.txt`. Reinstall it: `python -m pip uninstall -y pyarrow` then `python -m pip install "pyarrow==16.1.0"`, and check with `python -c "import pyarrow; print(pyarrow.__version__)"`. If it still fails with `DLL load failed`, install the **Microsoft Visual C++ Redistributable (x64)** and restart the terminal. |
+| `A module that was compiled using NumPy 1.x cannot be run in NumPy 2.x` | A package pulled in NumPy 2. Run `python -m pip install "numpy==1.26.3"` and restart the app. |
+| `The detection model could not be loaded` | Check that `models/best.pt` exists, is not empty, and (if you use Git LFS) that you ran `git lfs pull`. |
+| Warning about the model's classes at the top of the page | `best.pt` is not the 8-class model. Use the 8-class YOLOv8m weights listed in [Waste Classes](#-waste-classes). |
 | Error loading `best.pt` (for example "Can't get attribute") | The weights were trained with a newer Ultralytics than the installed one. Run `python -m pip install -U ultralytics`, test the app, and update the version in `requirements.txt`. |
 | App errors about `width='stretch'` | Streamlit is too old. This project needs Streamlit 1.51 or newer (pinned to 1.58.0). |
+| Photo upload shows nothing or does not update | Make sure you are using the current `app.py`. The live camera is stopped automatically when a photo is uploaded; if it still happens, press **⏹ Stop** first. |
+| "No waste items detected" for a photo | Keep **Show ALL model predictions** ticked and look at the Diagnostics box. If the model returns nothing even at 0.1%, the photo is very different from the training images (see [Known Limitations](#-known-limitations)). |
+| Good validation scores but poor predictions in the app | The model was trained with Ultralytics 8.4.175 but `requirements.txt` pins 8.1.0. Test in a separate virtual environment with `python -m pip install -U ultralytics` (this may also upgrade PyTorch, so it is a large download). First upload a single clear image from your validation set to check the app works on data the model knows. |
+| Many predictions but wrong classes | Those are usually tagged **Low**. The model needs more training on mixed-waste photos (see [Retraining](#retraining)). |
+| Old records from a previous 10-class model on the dashboard | Click **Remove Old-Model Records** in the dashboard sidebar. |
 | `Could not open camera` | Close other apps using the camera (Teams, Zoom, browser tabs). Try Camera Index 1 or 2. On Windows, turn on Settings → Privacy & security → Camera → **Let desktop apps access your camera**. |
 | Terminal shows `VIDEOIO(DSHOW)` errors | Windows camera backend messages. The app tries other backends automatically, so ignore them if the video appears. |
 | Camera fails the second time you press Start | Press **Stop**, wait two seconds, then start again so the camera is released. |
-| Live detection is slow | Lower `max_resnet_crops`, close other heavy programs, or remove `models/resnet50_bio_best.pt` to skip the second stage. |
-| No detections found | Lower the confidence threshold, use better lighting, and make sure the item is one of the 8 classes. |
+| Photo analysis is slow | It runs the model 5 times per photo on CPU. Use smaller photos, or limit `detect_multiscale()` to the full image only. |
 | `Port 8501 is already in use` | Close the old Streamlit window, or run with `--server.port 8502`. |
 | Changes to model files are not picked up | Stop the app with `Ctrl + C` and start it again, because Streamlit caches loaded models. |
 
 ---
 
-
 ## 🔮 Future Enhancements
 
+- [ ] Retrain the detector on cluttered, multi-object waste photos
 - [ ] Smoothing of detections across video frames to reduce flicker
 - [ ] Faster CPU inference with ONNX export
 - [ ] Batch processing of many images
@@ -340,10 +361,8 @@ python -m streamlit run app.py --server.port 8502
 
 - **Streamlit**: web application framework
 - **Ultralytics YOLOv8**: object detection
-- **PyTorch / torchvision**: ResNet50 classifier
+- **PyTorch / torchvision**: deep learning runtime
 - **OpenCV**: camera capture and drawing
 - **SQLite**: detection history
 - **Pandas / Plotly**: analytics dashboard
 - **Pillow / NumPy**: image handling
-
----
