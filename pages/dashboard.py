@@ -22,6 +22,7 @@ from database import (
     fetch_recent,
     fetch_all_detections,
     clear_all_detections,
+    remove_legacy_detections,
 )
 
 # ─────────────────────────────────────────────
@@ -203,6 +204,7 @@ html, body, [class*="css"] {
     font-size: 1.9rem; font-weight: 600; color: #14213D;
     line-height: 1;
 }
+.kpi-value.kpi-value-text { font-size: 1.25rem; line-height: 1.25; }
 .kpi-sub {
     font-size: 0.7rem; color: #A0ACB9;
     font-family: 'IBM Plex Mono', monospace;
@@ -381,15 +383,23 @@ st.markdown("""
 # ─────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### Navigation")
-    st.page_link("app.py", label="🏠 Back to Detection Console", icon="🏠")
+    st.page_link("app.py", label="Back to Detection Console", icon="🏠")
     st.markdown("---")
     st.markdown("### Data Management")
     if st.button("🔄 Refresh Data", width='stretch'):
         st.rerun()
     st.markdown("")
+    if st.button(
+        "🧹 Remove Old-Model Records", width='stretch',
+        help="Deletes records of classes the new 8-class model does not have (for example 'can' or 'cable').",
+    ):
+        removed = remove_legacy_detections()
+        st.toast(f"Removed {removed} old record(s).")
+        st.rerun()
+    st.markdown("")
     if st.button("🗑️ Clear All History", width='stretch'):
         clear_all_detections()
-        st.success("History cleared!")
+        st.toast("History cleared!")
         st.rerun()
 
 # ─────────────────────────────────────────────
@@ -420,23 +430,30 @@ LINE_COLOR   = "#DCE1E8"
 
 # ─────────────────────────────────────────────
 # KPI Cards
+# — 6 cards: Hazardous is shown separately, since database.py tracks
+#   medical_waste as its own 'Hazardous' nature
 # ─────────────────────────────────────────────
 st.markdown('<div class="section-label">Operational Overview</div>', unsafe_allow_html=True)
 
-c1, c2, c3, c4, c5 = st.columns(5)
+most_common_label = summary["most_common"]
+if most_common_label != "—":
+    most_common_label = most_common_label.replace("_", " ").title()
+
+c1, c2, c3, c4, c5, c6 = st.columns(6)
 kpi_data = [
-    (c1, summary["total"],                    "Total Detections",      "kpi-teal",  "🔍", "CUMULATIVE SCANS"),
-    (c2, summary["most_common"],              "Most Common Class",     "kpi-amber", "📦", "HIGHEST FREQUENCY"),
-    (c3, f"{summary['avg_confidence']:.2f}",  "Avg. Confidence",       "kpi-blue",  "🎯", "MODEL ACCURACY"),
-    (c4, summary["biodegradable"],            "Biodegradable Items",   "kpi-green", "🌿", "ORGANIC / PAPER"),
-    (c5, summary["non_biodegradable"],        "Non-Biodegradable",     "kpi-red",   "⚠️",  "PLASTIC / METAL / E-WASTE"),
+    (c1, summary["total"],                    "Total Detections",      "kpi-teal",  "🔍", "CUMULATIVE SCANS",                  ""),
+    (c2, most_common_label,                   "Most Common Class",     "kpi-blue",  "📦", "HIGHEST FREQUENCY",                 "kpi-value-text"),
+    (c3, f"{summary['avg_confidence']:.2f}",  "Avg. Confidence",       "kpi-teal",  "🎯", "MODEL ACCURACY",                    ""),
+    (c4, summary["biodegradable"],            "Biodegradable",         "kpi-green", "🌿", "ORGANIC / PAPER / CARDBOARD",       ""),
+    (c5, summary["non_biodegradable"],        "Non-Biodegradable",     "kpi-amber", "♻️",  "PLASTIC / METAL / GLASS / E-WASTE", ""),
+    (c6, summary.get("hazardous", 0),         "Hazardous",             "kpi-red",   "☣️",  "MEDICAL WASTE",                     ""),
 ]
-for col, val, label, cls, icon, sub in kpi_data:
+for col, val, label, cls, icon, sub, value_cls in kpi_data:
     with col:
         st.markdown(f"""
         <div class="kpi-card {cls}">
             <div class="kpi-label">{label}</div>
-            <div class="kpi-value">{val}</div>
+            <div class="kpi-value {value_cls}">{val}</div>
             <div class="kpi-sub">{sub}</div>
             <div class="kpi-icon">{icon}</div>
         </div>""", unsafe_allow_html=True)
@@ -450,7 +467,7 @@ if not df_dist.empty:
 
     chart_col1, chart_col2 = st.columns([1, 1], gap="medium")
 
-    # ── Donut — Bio vs Non-Bio ──────────────────────────────────────
+    # ── Donut — Bio vs Non-Bio vs Hazardous ─────────────────────────
     with chart_col1:
         st.markdown('<div class="section-label">Biodegradability Split</div>', unsafe_allow_html=True)
         st.markdown('<div class="chart-card"><div class="chart-title">Waste Nature Distribution</div>', unsafe_allow_html=True)

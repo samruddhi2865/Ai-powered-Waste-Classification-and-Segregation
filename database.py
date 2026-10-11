@@ -12,19 +12,26 @@ from datetime import datetime
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "waste_data.db")
 
 # ─────────────────────────────────────────────
-# Biodegradable / Non-biodegradable mapping
+# Biodegradable / Non-biodegradable / Hazardous mapping
+# — for the 8-class YOLOv8m model
+#   ('can' folded into 'metal', 'cable' folded into 'e_waste')
 # ─────────────────────────────────────────────
 BIODEGRADABLE_TYPES = {"organic_waste", "paper", "cardboard"}
 
 NON_BIODEGRADABLE_TYPES = {
-    "plastic", "metal", "glass", "can",
-    "cable", "e_waste", "medical_waste",
+    "plastic", "metal", "glass", "e_waste",
 }
+
+HAZARDOUS_TYPES = {"medical_waste"}
 
 WASTE_NATURE = {
     **{k: "Biodegradable"     for k in BIODEGRADABLE_TYPES},
     **{k: "Non-Biodegradable" for k in NON_BIODEGRADABLE_TYPES},
+    **{k: "Hazardous"         for k in HAZARDOUS_TYPES},
 }
+
+# The 8 classes the current model can output
+CURRENT_CLASSES = set(WASTE_NATURE.keys())
 
 
 def get_waste_nature(class_name: str) -> str:
@@ -46,7 +53,7 @@ def init_db():
             class_name   TEXT    NOT NULL,
             confidence   REAL    NOT NULL,
             bin_label    TEXT    NOT NULL,
-            waste_nature TEXT    NOT NULL            -- 'Biodegradable' / 'Non-Biodegradable'
+            waste_nature TEXT    NOT NULL            -- 'Biodegradable' / 'Non-Biodegradable' / 'Hazardous'
         )
     """)
     conn.commit()
@@ -119,13 +126,17 @@ def fetch_summary() -> dict:
     cur.execute("SELECT COUNT(*) FROM detections WHERE waste_nature='Non-Biodegradable'")
     non_bio_count = cur.fetchone()[0]
 
+    cur.execute("SELECT COUNT(*) FROM detections WHERE waste_nature='Hazardous'")
+    hazardous_count = cur.fetchone()[0]
+
     conn.close()
     return {
-        "total":         total,
-        "most_common":   most_common,
-        "avg_confidence": round(avg_conf, 3),
+        "total":             total,
+        "most_common":       most_common,
+        "avg_confidence":    round(avg_conf, 3),
         "biodegradable":     bio_count,
         "non_biodegradable": non_bio_count,
+        "hazardous":         hazardous_count,
     }
 
 
@@ -145,7 +156,7 @@ def fetch_distribution() -> list[dict]:
 
 
 def fetch_nature_split() -> dict:
-    """{'Biodegradable': N, 'Non-Biodegradable': M}"""
+    """{'Biodegradable': N, 'Non-Biodegradable': M, 'Hazardous': H}"""
     conn = sqlite3.connect(DB_PATH)
     cur  = conn.cursor()
     cur.execute("SELECT waste_nature, COUNT(*) FROM detections GROUP BY waste_nature")
@@ -166,11 +177,33 @@ def fetch_recent(limit: int = 20) -> list[dict]:
     return rows
 
 
+# ─────────────────────────────────────────────
+# Delete helpers
+# ─────────────────────────────────────────────
 def clear_all_detections():
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM detections")
     conn.commit()
     conn.close()
+
+
+def remove_legacy_detections() -> int:
+    """
+    Deletes records whose class is NOT one of the 8 current classes
+    (for example 'can' or 'cable' from the old 10-class model).
+    Returns how many records were removed.
+    """
+    placeholders = ",".join("?" for _ in CURRENT_CLASSES)
+    conn = sqlite3.connect(DB_PATH)
+    cur  = conn.cursor()
+    cur.execute(
+        f"DELETE FROM detections WHERE class_name NOT IN ({placeholders})",
+        tuple(CURRENT_CLASSES),
+    )
+    removed = cur.rowcount
+    conn.commit()
+    conn.close()
+    return removed
 
 
 # ─────────────────────────────────────────────

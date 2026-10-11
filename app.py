@@ -19,30 +19,41 @@ st.set_page_config(
 
 # ─────────────────────────────────────────────
 # Load YOLO model
+#   Put the trained YOLOv8m file at:  models/best.pt
+#   The cache key includes the file's modified time, so replacing
+#   best.pt is picked up automatically (no stale old model).
 # ─────────────────────────────────────────────
+BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(BASE_DIR, "models", "best.pt")
+
+
 @st.cache_resource
-def load_model():
-    BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
-    MODEL_PATH = os.path.join(BASE_DIR, "models", "best.pt")
+def load_model(path: str, mtime: float):
+    if not os.path.exists(path):
+        st.error(f"Model file not found: {path}")
+        return None
     try:
-        return YOLO(MODEL_PATH)
+        return YOLO(path)
     except Exception as e:
         st.error(f"Error loading model: {e}")
         return None
 
-model = load_model()
+
+model = load_model(
+    MODEL_PATH,
+    os.path.getmtime(MODEL_PATH) if os.path.exists(MODEL_PATH) else 0.0,
+)
 
 # ─────────────────────────────────────────────
-# Waste categories — colours tuned for a light,
-# document-style interface (hex = CSS, color = BGR for cv2)
+# Waste categories — 8 classes matching the YOLOv8m model
+# (removed 'can' and 'cable' from the old 10-class system —
+#  'can' folds into 'metal', 'cable' folds into 'e_waste')
 # ─────────────────────────────────────────────
 WASTE_CATEGORIES = {
     'plastic':       {'color': (144, 116, 14),  'hex': '#0E7490', 'icon': '♻️',  'bin': 'Yellow Bin',  'schedule': 'Sch. I(a)', 'description': 'Recyclable plastic items',    'nature': 'Non-Biodegradable'},
-    'metal':         {'color': (9, 83, 180),    'hex': '#B45309', 'icon': '🔩',  'bin': 'Blue Bin',    'schedule': 'Sch. I(b)', 'description': 'Metal cans and items',         'nature': 'Non-Biodegradable'},
+    'metal':         {'color': (9, 83, 180),    'hex': '#B45309', 'icon': '🔩',  'bin': 'Blue Bin',    'schedule': 'Sch. I(b)', 'description': 'Metal cans, scrap and items',  'nature': 'Non-Biodegradable'},
     'glass':         {'color': (110, 118, 15),  'hex': '#0F766E', 'icon': '🍾',  'bin': 'Green Bin',   'schedule': 'Sch. I(c)', 'description': 'Glass bottles and containers', 'nature': 'Non-Biodegradable'},
-    'can':           {'color': (14, 64, 146),   'hex': '#92400E', 'icon': '🥫',  'bin': 'Blue Bin',    'schedule': 'Sch. I(d)', 'description': 'Aluminum and tin cans',        'nature': 'Non-Biodegradable'},
-    'cable':         {'color': (217, 40, 109),  'hex': '#6D28D9', 'icon': '🔌',  'bin': 'E-Waste Bin', 'schedule': 'Sch. II(a)','description': 'Electrical cables',            'nature': 'Non-Biodegradable'},
-    'e_waste':       {'color': (18, 45, 124),   'hex': '#7C2D12', 'icon': '💻',  'bin': 'E-Waste Bin', 'schedule': 'Sch. II(b)','description': 'Electronic waste',             'nature': 'Non-Biodegradable'},
+    'e_waste':       {'color': (18, 45, 124),   'hex': '#7C2D12', 'icon': '💻',  'bin': 'E-Waste Bin', 'schedule': 'Sch. II(a)','description': 'Electronic waste and cables',  'nature': 'Non-Biodegradable'},
     'medical_waste': {'color': (28, 28, 185),   'hex': '#B91C1C', 'icon': '💉',  'bin': 'Red Bin',     'schedule': 'Sch. III',  'description': 'Medical and hazardous waste',  'nature': 'Hazardous'},
     'paper':         {'color': (216, 78, 29),   'hex': '#1D4ED8', 'icon': '📄',  'bin': 'Blue Bin',    'schedule': 'Sch. IV(a)','description': 'Paper and documents',          'nature': 'Biodegradable'},
     'cardboard':     {'color': (15, 53, 120),   'hex': '#78350F', 'icon': '📦',  'bin': 'Blue Bin',    'schedule': 'Sch. IV(b)','description': 'Cardboard boxes',              'nature': 'Biodegradable'},
@@ -61,6 +72,27 @@ NATURE_COLORS = {
     'Hazardous':         {'bg': '#FEF2F2', 'text': '#B91C1C', 'border': '#FCA5A5'},
     'Unknown':           {'bg': '#F3F4F6', 'text': '#4B5563', 'border': '#D1D5DB'},
 }
+
+
+def check_model_classes(yolo_model):
+    """
+    Compares the classes inside the loaded model with the 8 classes this app
+    knows about. Returns (ok, message). The app looks classes up by NAME, so
+    a different order is harmless.
+    """
+    expected = set(WASTE_CATEGORIES.keys())
+    names = [yolo_model.names[i] for i in range(len(yolo_model.names))]
+    missing = sorted(expected - set(names))
+    extra   = sorted(set(names) - expected)
+    if not missing and not extra:
+        return True, ""
+    msg = f"This model has {len(names)} classes, but the app expects {len(expected)}. "
+    if missing:
+        msg += f"Missing: {', '.join(missing)}. "
+    if extra:
+        msg += f"Not in the app's list: {', '.join(extra)}. "
+    msg += "Make sure models/best.pt is the new YOLOv8m 8-class file."
+    return False, msg
 
 
 def ref_number(seed: int, prefix: str = "WMS") -> str:
@@ -437,8 +469,8 @@ st.markdown("""
         to its statutory bin category, and records the observation for municipal reporting.
     </div>
     <div class="hero-badge-row">
-        <span class="hero-badge hb-blue">YOLOv8 Object Detection</span>
-        <span class="hero-badge hb-amber">10 Notified Waste Classes</span>
+        <span class="hero-badge hb-blue">YOLOv8m Object Detection</span>
+        <span class="hero-badge hb-amber">8 Notified Waste Classes</span>
         <span class="hero-badge hb-green">Live Camera &amp; Photo Upload</span>
     </div>
 </div>
@@ -446,6 +478,10 @@ st.markdown("""
 
 if model is None:
     st.warning("The detection model could not be loaded. Verify that `models/best.pt` exists before using this portal.")
+else:
+    _model_ok, _model_msg = check_model_classes(model)
+    if not _model_ok:
+        st.warning(_model_msg)
 
 # ─────────────────────────────────────────────
 # Sidebar
@@ -457,7 +493,7 @@ with st.sidebar:
     camera_index   = st.number_input("Camera Index", min_value=0, max_value=5, value=0, step=1,
                                      help="0 = default webcam. Try 1 or 2 if camera fails.")
     st.markdown("---")
-    st.page_link("pages/dashboard.py", label="📊 Analytics Dashboard", icon="📊")
+    st.page_link("pages/dashboard.py", label="Analytics Dashboard", icon="📊")
     st.markdown("---")
 
     st.markdown("### Schedule I — Waste Classification Index")
@@ -504,7 +540,7 @@ with tab1:
             <div class="info-panel-title">Disposal Guide</div>
             <div style="font-size:0.78rem; color:#445468; line-height:1.85;">
                 🟢 <b style="color:#15803D;">Green Bin</b> — Organic / Glass<br>
-                🔵 <b style="color:#1D4ED8;">Blue Bin</b> — Paper / Metal<br>
+                🔵 <b style="color:#1D4ED8;">Blue Bin</b> — Paper / Cardboard / Metal<br>
                 🟡 <b style="color:#B45309;">Yellow Bin</b> — Plastic<br>
                 🔴 <b style="color:#B91C1C;">Red Bin</b> — Medical / Hazardous<br>
                 🟣 <b style="color:#6D28D9;">E-Waste Bin</b> — Electronics
@@ -657,7 +693,17 @@ with tab2:
                     results, detections = classify_image(image, conf_threshold)
 
                 if detections:
-                    save_detections(detections, source="upload")
+                    # Streamlit re-runs this script on every click or slider move.
+                    # Save to the database only once per (file, threshold) so the
+                    # dashboard numbers are not inflated by repeated reruns.
+                    _upload_key = (
+                        str(getattr(uploaded_file, "file_id", uploaded_file.name)),
+                        int(uploaded_file.size),
+                        round(float(conf_threshold), 2),
+                    )
+                    if st.session_state.get("last_saved_upload") != _upload_key:
+                        save_detections(detections, source="upload")
+                        st.session_state.last_saved_upload = _upload_key
 
                     bio_count    = sum(1 for d in detections if d['category_info'].get('nature') == 'Biodegradable')
                     nonbio_count = sum(1 for d in detections if d['category_info'].get('nature') == 'Non-Biodegradable')
@@ -693,7 +739,9 @@ with tab2:
                         </div>""", unsafe_allow_html=True)
 
                     st.markdown('<div class="section-label" style="margin-top:1.2rem;">Annotated Output</div>', unsafe_allow_html=True)
-                    st.image(results[0].plot(), width='stretch')
+                    # results[0].plot() returns a BGR array, so tell Streamlit
+                    # (otherwise red and blue colours appear swapped).
+                    st.image(results[0].plot(), channels="BGR", width='stretch')
                 else:
                     st.markdown("""
                     <div style="background:#FFFFFF; border:1px solid #DCE1E8; border-radius:4px;
