@@ -641,6 +641,8 @@ if not df_recent.empty:
     df_show = df_recent[display_cols].copy()
     df_show["confidence"] = df_show["confidence"].apply(lambda x: f"{x*100:.1f}%")
     df_show.columns = ["ID", "Timestamp", "Source", "Waste Type", "Confidence", "Bin", "Nature"]
+    df_show.insert(5, "Level", df_recent["confidence"].apply(
+        lambda x: "High" if x >= 0.5 else ("Medium" if x >= 0.25 else "Low")).values)
 
     styled = df_show.style.map(style_nature, subset=["Nature"])
     st.dataframe(styled, width='stretch', height=340)
@@ -702,6 +704,37 @@ else:
                 font-family:'IBM Plex Mono',monospace; font-size:0.75rem; letter-spacing:0.1em;">
         ACTIVITY LOG EMPTY — NO DETECTIONS RECORDED YET
     </div>""", unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────
+# Per-image reports — every item the model found in each uploaded photo
+# ─────────────────────────────────────────────
+if not df_all.empty and "image_id" in df_all.columns and df_all["image_id"].notna().any():
+    st.markdown('<div class="section-label">Per-Image Waste Reports</div>', unsafe_allow_html=True)
+    df_img = df_all[df_all["image_id"].notna()].copy()
+    reports = []
+    for img_id, g in df_img.groupby("image_id", sort=False):
+        counts = g["class_name"].str.replace("_", " ").str.title().value_counts()
+        reports.append({
+            "Image":         g["image_name"].iloc[0],
+            "Report ID":     img_id,
+            "Time":          g["timestamp"].iloc[0],
+            "Items Found":   len(g),
+            "Waste Types":   ", ".join(f"{k} ×{v}" for k, v in counts.items()),
+            "Bio / Non-Bio / Haz": "{} / {} / {}".format(
+                (g["waste_nature"] == "Biodegradable").sum(),
+                (g["waste_nature"] == "Non-Biodegradable").sum(),
+                (g["waste_nature"] == "Hazardous").sum()),
+            "Avg. Confidence": f"{g['confidence'].mean()*100:.1f}%",
+            "Low-conf. items": int((g["confidence"] < 0.25).sum()),
+        })
+    df_reports = pd.DataFrame(reports)
+    mixed = int((df_reports["Items Found"] > 1).sum())
+    st.markdown(
+        f"<div style='font-size:0.85rem;color:#5B6B7C;margin-bottom:0.5rem;'>"
+        f"{len(df_reports)} photo(s) analysed · <b>{mixed}</b> with more than one waste item "
+        f"(\"Low-conf.\" = model is less than 25% sure, treat with caution)</div>",
+        unsafe_allow_html=True)
+    st.dataframe(df_reports, width='stretch', hide_index=True)
 
 # ─────────────────────────────────────────────
 # Export

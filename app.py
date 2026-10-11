@@ -1,9 +1,11 @@
 import os
 import platform
 import time
+from collections import Counter
+from datetime import datetime
 import streamlit as st
 from ultralytics import YOLO
-from PIL import Image
+from PIL import Image, ImageOps
 import cv2
 from database import save_detections
 
@@ -81,7 +83,7 @@ def check_model_classes(yolo_model):
     a different order is harmless.
     """
     expected = set(WASTE_CATEGORIES.keys())
-    names = [yolo_model.names[i] for i in range(len(yolo_model.names))]
+    names = [normalize_class(yolo_model.names[i]) for i in range(len(yolo_model.names))]
     missing = sorted(expected - set(names))
     extra   = sorted(set(names) - expected)
     if not missing and not extra:
@@ -93,6 +95,10 @@ def check_model_classes(yolo_model):
         msg += f"Not in the app's list: {', '.join(extra)}. "
     msg += "Make sure models/best.pt is the new YOLOv8m 8-class file."
     return False, msg
+
+
+def conf_band(c: float) -> str:
+    return "High" if c >= 0.50 else ("Medium" if c >= 0.25 else "Low")
 
 
 def ref_number(seed: int, prefix: str = "WMS") -> str:
@@ -144,47 +150,146 @@ def open_camera(index: int) -> cv2.VideoCapture:
 # ─────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────
+def normalize_class(name) -> str:
+    """'Organic Waste' / 'organic-waste' / 'E-Waste' -> 'organic_waste' / 'e_waste'."""
+    n = str(name).strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {"ewaste": "e_waste", "e_waste": "e_waste", "organic": "organic_waste",
+               "medical": "medical_waste", "biodegradable": "organic_waste"}
+    return aliases.get(n, n)
+
+
+def _extract(result):
+    dets = []
+    # Classification model (yolov8-cls): no boxes, only class probabilities
+    probs = getattr(result, "probs", None)
+    if probs is not None:
+        cname = normalize_class(result.names[int(probs.top1)])
+        dets.append({
+            'class':         cname,
+            'confidence':    float(probs.top1conf),
+            'category_info': WASTE_CATEGORIES.get(cname, DEFAULT_CATEGORY),
+            'xyxy':          None,
+        })
+        return dets
+    if result.boxes is None or len(result.boxes) == 0:
+        return dets
+    for box in result.boxes:
+        cname = normalize_class(result.names.get(int(box.cls[0]), str(int(box.cls[0]))))
+        dets.append({
+            'class':         cname,
+            'confidence':    float(box.conf[0]),
+            'category_info': WASTE_CATEGORIES.get(cname, DEFAULT_CATEGORY),
+            'xyxy':          [int(v) for v in box.xyxy[0].tolist()],
+        })
+    return dets
+
+
 def classify_image(image, conf_threshold=0.25):
-    results = model(image, conf=conf_threshold, verbose=False)
-    detections = []
-    for result in results:
-        if result.boxes is not None and len(result.boxes) > 0:
-            for box in result.boxes:
-                class_id   = int(box.cls[0])
-                confidence = float(box.conf[0])
-                class_name = result.names.get(class_id, str(class_id))
-                detections.append({
-                    'class':         class_name,
-                    'confidence':    confidence,
-                    'category_info': WASTE_CATEGORIES.get(class_name, DEFAULT_CATEGORY),
-                })
+    """Runs YOLO on a PIL image. If nothing is found, retries once at a lower
+    confidence so a weak-but-correct prediction is not silently dropped."""
+    results = model(image, conf=conf_threshold, imgsz=640, iou=0.5, max_det=100, verbose=False)
+    detections = [d for r in results for d in _extract(r)]
+    if not detections and conf_threshold > 0.10:
+        results = model(image, conf=0.10, imgsz=640, verbose=False)
+        detections = [d for r in results for d in _extract(r)]
     return results, detections
+
+
+def _iou(a, b):
+    ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])
+    ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])
+    inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+    ua = (a[2]-a[0])*(a[3]-a[1]) + (b[2]-b[0])*(b[3]-b[1]) - inter
+    return inter / ua if ua > 0 else 0.0
+
+
+def _nms(dets, iou_thr=0.5, keep=30):
+    """Class-wise non-max suppression; keeps the strongest of overlapping same-class boxes."""
+    dets = sorted(dets, key=lambda d: -d['confidence'])
+    kept = []
+    for d in dets:
+        if d['xyxy'] is None:
+            kept.append(d)
+            continue
+        if any(k['class'] == d['class'] and k['xyxy'] is not None
+               and _iou(k['xyxy'], d['xyxy']) > iou_thr for k in kept):
+            continue
+        kept.append(d)
+    return kept[:keep]
+
+
+def detect_multiscale(image, conf):
+    """
+    Runs the model on the whole photo AND on four overlapping zoomed-in tiles,
+    then merges the results. Cluttered photos hold many small objects, and zooming
+    in lets the model consider each region on its own. Returns every prediction
+    (even very low confidence) so the report can list them all.
+    """
+    W, H = image.size
+
+    def run(img, ox, oy):
+        out = []
+        for r in model(img, conf=conf, imgsz=640, iou=0.5, max_det=100, verbose=False):
+            out += _extract(r)
+        for d in out:
+            if d['xyxy'] is not None:
+                x1, y1, x2, y2 = d['xyxy']
+                d['xyxy'] = [x1 + ox, y1 + oy, x2 + ox, y2 + oy]
+        return out
+
+    dets = run(image, 0, 0)
+    if getattr(model, "task", "detect") == "detect":
+        tw, th = int(W * 0.6), int(H * 0.6)
+        for ox in (0, W - tw):
+            for oy in (0, H - th):
+                dets += run(image.crop((ox, oy, ox + tw, oy + th)), ox, oy)
+    return _nms(dets)
+
+
+def draw_detections(image, detections):
+    """Draws every prediction on a copy of the photo. Returns an RGB numpy array."""
+    import numpy as np
+    canvas = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+    for i, d in enumerate(detections):
+        if d['xyxy'] is None:
+            continue
+        x1, y1, x2, y2 = d['xyxy']
+        col = d['category_info']['color']
+        cv2.rectangle(canvas, (x1, y1), (x2, y2), col, 2)
+        label = f"{i+1}. {d['class'].replace('_',' ').title()} {d['confidence']*100:.0f}%"
+        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+        ty = max(th + 6, y1)
+        cv2.rectangle(canvas, (x1, ty - th - 6), (x1 + tw + 6, ty), col, -1)
+        cv2.putText(canvas, label, (x1 + 3, ty - 4), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.45, (255, 255, 255), 1, cv2.LINE_AA)
+    return cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB)
+
+
+def debug_predictions(image):
+    """Raw top predictions at a very low confidence, to see what the model 'thinks'."""
+    res = model(image, conf=0.001, imgsz=640, verbose=False)
+    rows = [(d['class'], round(d['confidence'], 3)) for r in res for d in _extract(r)]
+    rows.sort(key=lambda x: -x[1])
+    return rows[:8]
 
 
 def run_inference_on_frame(frame_bgr, conf_threshold):
     frame_rgb  = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-    results    = model(frame_rgb, conf=conf_threshold, verbose=False)
-    detections = []
+    results    = model(frame_rgb, conf=conf_threshold, imgsz=640, verbose=False)
+    detections = [d for r in results for d in _extract(r)]
 
-    for result in results:
-        if result.boxes is not None and len(result.boxes) > 0:
-            for box in result.boxes:
-                class_id   = int(box.cls[0])
-                confidence = float(box.conf[0])
-                class_name = result.names.get(class_id, str(class_id))
-                cat        = WASTE_CATEGORIES.get(class_name, DEFAULT_CATEGORY)
-                x1, y1, x2, y2 = [int(v) for v in box.xyxy[0].tolist()]
-
-                cv2.rectangle(frame_bgr, (x1, y1), (x2, y2), cat['color'], 2)
-                label = f"{class_name.replace('_',' ').title()} {confidence*100:.0f}%"
-                (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)
-                cv2.rectangle(frame_bgr, (x1, y1 - th - 14), (x1 + tw + 10, y1), cat['color'], -1)
-                cv2.putText(frame_bgr, label, (x1 + 5, y1 - 5),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2, cv2.LINE_AA)
-
-                detections.append({
-                    'class': class_name, 'confidence': confidence, 'category_info': cat,
-                })
+    for det in detections:
+        cat = det['category_info']
+        if det['xyxy'] is None:
+            x1, y1, x2, y2 = 10, 40, 10, 40
+        else:
+            x1, y1, x2, y2 = det['xyxy']
+            cv2.rectangle(frame_bgr, (x1, y1), (x2, y2), cat['color'], 2)
+        label = f"{det['class'].replace('_',' ').title()} {det['confidence']*100:.0f}%"
+        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)
+        cv2.rectangle(frame_bgr, (x1, y1 - th - 14), (x1 + tw + 10, y1), cat['color'], -1)
+        cv2.putText(frame_bgr, label, (x1 + 5, y1 - 5),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2, cv2.LINE_AA)
 
     return frame_bgr, detections
 
@@ -488,10 +593,16 @@ else:
 # ─────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### Detection Settings")
-    conf_threshold = st.slider("Confidence Threshold", 0.0, 1.0, 0.25, 0.05,
+    conf_threshold = st.slider("Confidence Threshold", 0.05, 1.0, 0.20, 0.05,
                                help="Lower = more detections but noisier results")
+    show_all = st.checkbox(
+        "Show ALL model predictions (photo upload)", value=True,
+        help="Lists every prediction the model makes, even at 1% confidence. "
+             "Very low-confidence items are likely wrong — check the confidence tag.")
     camera_index   = st.number_input("Camera Index", min_value=0, max_value=5, value=0, step=1,
                                      help="0 = default webcam. Try 1 or 2 if camera fails.")
+    if model is not None:
+        st.caption(f"Model task: {getattr(model, 'task', '?')} · {len(model.names)} classes")
     st.markdown("---")
     st.page_link("pages/dashboard.py", label="Analytics Dashboard", icon="📊")
     st.markdown("---")
@@ -509,7 +620,139 @@ with st.sidebar:
 # ─────────────────────────────────────────────
 # Tabs
 # ─────────────────────────────────────────────
+if "webcam_running" not in st.session_state:
+    st.session_state.webcam_running = False
+
 tab1, tab2 = st.tabs(["Live Camera Detection", "Photo Upload & Analysis"])
+
+# ══════════════════════════════════════════════
+# TAB 2 — UPLOAD IMAGE
+# ══════════════════════════════════════════════
+with tab2:
+    st.markdown('<div class="section-label">Image Analysis</div>', unsafe_allow_html=True)
+
+    uploaded_file = st.file_uploader(
+        "Upload an image to analyse",
+        type=['png', 'jpg', 'jpeg', 'bmp', 'gif'],
+        help="Supports JPG, PNG, BMP, GIF"
+    )
+
+    if uploaded_file is not None:
+        # The live-camera loop blocks the script, so stop it when a new photo
+        # arrives; otherwise the analysis below would never run.
+        _seen = (uploaded_file.name, int(uploaded_file.size))
+        if st.session_state.get("seen_upload") != _seen:
+            st.session_state.seen_upload = _seen
+            st.session_state.webcam_running = False
+        image = Image.open(uploaded_file)
+        image = ImageOps.exif_transpose(image).convert("RGB")
+        col1, col2 = st.columns([1, 1], gap="large")
+
+        with col1:
+            st.markdown('<div class="section-label">Input Image</div>', unsafe_allow_html=True)
+            st.image(image, width='stretch')
+
+        with col2:
+            st.markdown('<div class="section-label">Classification Report</div>', unsafe_allow_html=True)
+            if model is not None:
+                effective_conf = 0.001 if show_all else conf_threshold
+                with st.spinner("Running AI analysis…"):
+                    detections = detect_multiscale(image, effective_conf)
+                detections = sorted(detections, key=lambda d: -d['confidence'])
+
+                if detections:
+                    # Streamlit re-runs this script on every click or slider move.
+                    # Save to the database only once per (file, threshold) so the
+                    # dashboard numbers are not inflated by repeated reruns.
+                    _upload_key = (
+                        str(getattr(uploaded_file, "file_id", uploaded_file.name)),
+                        int(uploaded_file.size),
+                        round(float(effective_conf), 2),
+                    )
+                    if st.session_state.get("last_saved_upload") != _upload_key:
+                        save_detections(
+                            detections, source="upload",
+                            image_id=f"IMG-{datetime.now():%Y%m%d-%H%M%S}",
+                            image_name=uploaded_file.name,
+                        )
+                        st.session_state.last_saved_upload = _upload_key
+
+                    bio_count    = sum(1 for d in detections if d['category_info'].get('nature') == 'Biodegradable')
+                    nonbio_count = sum(1 for d in detections if d['category_info'].get('nature') == 'Non-Biodegradable')
+                    haz_count    = sum(1 for d in detections if d['category_info'].get('nature') == 'Hazardous')
+
+                    st.markdown(f"""
+                    <div class="status-bar" style="margin-bottom:1rem;">
+                        <span>DETECTED: <span class="status-val">{len(detections)}</span></span>
+                        <span style="color:#15803D;">BIO: {bio_count}</span>
+                        <span style="color:#C2410C;">NON-BIO: {nonbio_count}</span>
+                        <span style="color:#B91C1C;">HAZ: {haz_count}</span>
+                    </div>""", unsafe_allow_html=True)
+
+                    _counts = Counter(d['class'].replace('_', ' ').title() for d in detections)
+                    st.markdown(
+                        "**Items found in this image:** " +
+                        ", ".join(f"{k} ×{v}" for k, v in _counts.most_common()))
+
+                    for i, det in enumerate(detections):
+                        c   = det['category_info']['hex']
+                        nat = det['category_info'].get('nature', 'Unknown')
+                        nc  = NATURE_COLORS.get(nat, NATURE_COLORS['Unknown'])
+                        st.markdown(f"""
+                        <div class="det-card" style="border-left-color:{c};">
+                            <div class="det-card-top">
+                                <div class="det-card-title">{det['category_info']['icon']} {det['class'].replace('_',' ').title()}</div>
+                                <div class="det-card-ref">{ref_number(i, prefix="UPL")}</div>
+                            </div>
+                            <div class="det-card-meta">
+                                <span class="conf-pill" style="background:{c}18;color:{c};">{det['confidence']*100:.1f}%</span>
+                                <span class="bin-tag">{det['category_info']['bin']}</span>
+                                <span class="sched-tag">{det['category_info']['schedule']} · {conf_band(det['confidence'])} confidence</span>
+                                <span class="nature-tag" style="background:{nc['bg']};color:{nc['text']};border-color:{nc['border']};">{nat}</span>
+                            </div>
+                            <div style="font-size:0.75rem;color:#7A8A9C;margin-top:6px;">
+                                {det['category_info']['description']}
+                            </div>
+                        </div>""", unsafe_allow_html=True)
+
+                    st.markdown('<div class="section-label" style="margin-top:1.2rem;">Annotated Output</div>', unsafe_allow_html=True)
+                    # results[0].plot() returns a BGR array, so tell Streamlit
+                    # (otherwise red and blue colours appear swapped).
+                    st.image(draw_detections(image, detections), channels="RGB", width='stretch')
+                else:
+                    st.markdown("""
+                    <div style="background:#FFFFFF; border:1px solid #DCE1E8; border-radius:4px;
+                                padding:2rem; text-align:center; color:#5B6B7C;">
+                        <div style="font-size:1.7rem;">🔍</div>
+                        <div style="font-family:'Fraunces',serif; font-weight:600; margin:0.5rem 0; color:#14213D;">
+                            No waste items detected
+                        </div>
+                        <div style="font-size:0.78rem; font-family:'IBM Plex Mono',monospace; color:#8593A3;">
+                            TRY LOWERING THE CONFIDENCE THRESHOLD IN THE SIDEBAR
+                        </div>
+                    </div>""", unsafe_allow_html=True)
+                    with st.expander("Diagnostics — what the model sees (conf ≥ 0.1%)", expanded=True):
+                        st.write(f"Model task: **{getattr(model, 'task', '?')}**")
+                        st.write("Model classes:", [model.names[i] for i in range(len(model.names))])
+                        _raw = debug_predictions(image)
+                        if _raw:
+                            st.table({"Class": [r[0] for r in _raw], "Confidence": [r[1] for r in _raw]})
+                        else:
+                            st.write("Model returned **nothing** even at 1% confidence.")
+            else:
+                st.error("Model not loaded. Please verify `models/best.pt` exists.")
+    else:
+        st.markdown("""
+        <div class="upload-hint">
+            <div style="font-size:1.9rem; margin-bottom:0.8rem;">📂</div>
+            <div style="font-family:'Fraunces',serif; font-size:0.95rem; color:#14213D; font-weight:600;">
+                Drop an image file above to begin analysis
+            </div>
+            <div style="font-size:0.72rem; margin-top:0.4rem; font-family:'IBM Plex Mono',monospace; letter-spacing:0.06em; color:#A0ACB9;">
+                SUPPORTED FORMATS: JPG · PNG · BMP · GIF
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════
 # TAB 1 — LIVE WEBCAM
@@ -548,8 +791,6 @@ with tab1:
         </div>
         """, unsafe_allow_html=True)
 
-    if "webcam_running" not in st.session_state:
-        st.session_state.webcam_running = False
     if start_btn:
         st.session_state.webcam_running = True
     if stop_btn:
@@ -573,7 +814,8 @@ with tab1:
                     <span>STREAM: <span class="status-val">LIVE</span></span>
                 </div>""", unsafe_allow_html=True)
 
-                SAVE_EVERY_N_FRAMES = 30
+                SAVE_EVERY_SECONDS = 2.0
+                last_save = 0.0
                 frame_count = 0
                 consecutive_failures = 0
                 MAX_CONSECUTIVE_FAILURES = 20  # ~2s of bad reads before giving up
@@ -599,8 +841,9 @@ with tab1:
                         annotated, detections = run_inference_on_frame(frame, conf_threshold)
 
                         frame_count += 1
-                        if detections and frame_count % SAVE_EVERY_N_FRAMES == 0:
+                        if detections and (time.time() - last_save) >= SAVE_EVERY_SECONDS:
                             save_detections(detections, source="webcam")
+                            last_save = time.time()
 
                         display = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
                         frame_placeholder.image(display, channels="RGB", width='stretch')
@@ -666,108 +909,6 @@ with tab1:
             </div>
         </div>""", unsafe_allow_html=True)
 
-# ══════════════════════════════════════════════
-# TAB 2 — UPLOAD IMAGE
-# ══════════════════════════════════════════════
-with tab2:
-    st.markdown('<div class="section-label">Image Analysis</div>', unsafe_allow_html=True)
-
-    uploaded_file = st.file_uploader(
-        "Upload an image to analyse",
-        type=['png', 'jpg', 'jpeg', 'bmp', 'gif'],
-        help="Supports JPG, PNG, BMP, GIF"
-    )
-
-    if uploaded_file is not None:
-        image = Image.open(uploaded_file).convert("RGB")
-        col1, col2 = st.columns([1, 1], gap="large")
-
-        with col1:
-            st.markdown('<div class="section-label">Input Image</div>', unsafe_allow_html=True)
-            st.image(image, width='stretch')
-
-        with col2:
-            st.markdown('<div class="section-label">Classification Report</div>', unsafe_allow_html=True)
-            if model is not None:
-                with st.spinner("Running AI analysis…"):
-                    results, detections = classify_image(image, conf_threshold)
-
-                if detections:
-                    # Streamlit re-runs this script on every click or slider move.
-                    # Save to the database only once per (file, threshold) so the
-                    # dashboard numbers are not inflated by repeated reruns.
-                    _upload_key = (
-                        str(getattr(uploaded_file, "file_id", uploaded_file.name)),
-                        int(uploaded_file.size),
-                        round(float(conf_threshold), 2),
-                    )
-                    if st.session_state.get("last_saved_upload") != _upload_key:
-                        save_detections(detections, source="upload")
-                        st.session_state.last_saved_upload = _upload_key
-
-                    bio_count    = sum(1 for d in detections if d['category_info'].get('nature') == 'Biodegradable')
-                    nonbio_count = sum(1 for d in detections if d['category_info'].get('nature') == 'Non-Biodegradable')
-                    haz_count    = sum(1 for d in detections if d['category_info'].get('nature') == 'Hazardous')
-
-                    st.markdown(f"""
-                    <div class="status-bar" style="margin-bottom:1rem;">
-                        <span>DETECTED: <span class="status-val">{len(detections)}</span></span>
-                        <span style="color:#15803D;">BIO: {bio_count}</span>
-                        <span style="color:#C2410C;">NON-BIO: {nonbio_count}</span>
-                        <span style="color:#B91C1C;">HAZ: {haz_count}</span>
-                    </div>""", unsafe_allow_html=True)
-
-                    for i, det in enumerate(detections):
-                        c   = det['category_info']['hex']
-                        nat = det['category_info'].get('nature', 'Unknown')
-                        nc  = NATURE_COLORS.get(nat, NATURE_COLORS['Unknown'])
-                        st.markdown(f"""
-                        <div class="det-card" style="border-left-color:{c};">
-                            <div class="det-card-top">
-                                <div class="det-card-title">{det['category_info']['icon']} {det['class'].replace('_',' ').title()}</div>
-                                <div class="det-card-ref">{ref_number(i, prefix="UPL")}</div>
-                            </div>
-                            <div class="det-card-meta">
-                                <span class="conf-pill" style="background:{c}18;color:{c};">{det['confidence']*100:.1f}%</span>
-                                <span class="bin-tag">{det['category_info']['bin']}</span>
-                                <span class="sched-tag">{det['category_info']['schedule']}</span>
-                                <span class="nature-tag" style="background:{nc['bg']};color:{nc['text']};border-color:{nc['border']};">{nat}</span>
-                            </div>
-                            <div style="font-size:0.75rem;color:#7A8A9C;margin-top:6px;">
-                                {det['category_info']['description']}
-                            </div>
-                        </div>""", unsafe_allow_html=True)
-
-                    st.markdown('<div class="section-label" style="margin-top:1.2rem;">Annotated Output</div>', unsafe_allow_html=True)
-                    # results[0].plot() returns a BGR array, so tell Streamlit
-                    # (otherwise red and blue colours appear swapped).
-                    st.image(results[0].plot(), channels="BGR", width='stretch')
-                else:
-                    st.markdown("""
-                    <div style="background:#FFFFFF; border:1px solid #DCE1E8; border-radius:4px;
-                                padding:2rem; text-align:center; color:#5B6B7C;">
-                        <div style="font-size:1.7rem;">🔍</div>
-                        <div style="font-family:'Fraunces',serif; font-weight:600; margin:0.5rem 0; color:#14213D;">
-                            No waste items detected
-                        </div>
-                        <div style="font-size:0.78rem; font-family:'IBM Plex Mono',monospace; color:#8593A3;">
-                            TRY LOWERING THE CONFIDENCE THRESHOLD IN THE SIDEBAR
-                        </div>
-                    </div>""", unsafe_allow_html=True)
-            else:
-                st.error("Model not loaded. Please verify `models/best.pt` exists.")
-    else:
-        st.markdown("""
-        <div class="upload-hint">
-            <div style="font-size:1.9rem; margin-bottom:0.8rem;">📂</div>
-            <div style="font-family:'Fraunces',serif; font-size:0.95rem; color:#14213D; font-weight:600;">
-                Drop an image file above to begin analysis
-            </div>
-            <div style="font-size:0.72rem; margin-top:0.4rem; font-family:'IBM Plex Mono',monospace; letter-spacing:0.06em; color:#A0ACB9;">
-                SUPPORTED FORMATS: JPG · PNG · BMP · GIF
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
 # Footer

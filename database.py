@@ -35,7 +35,8 @@ CURRENT_CLASSES = set(WASTE_NATURE.keys())
 
 
 def get_waste_nature(class_name: str) -> str:
-    return WASTE_NATURE.get(class_name, "Unknown")
+    key = str(class_name).strip().lower().replace("-", "_").replace(" ", "_")
+    return WASTE_NATURE.get(key, "Unknown")
 
 
 # ─────────────────────────────────────────────
@@ -56,6 +57,13 @@ def init_db():
             waste_nature TEXT    NOT NULL            -- 'Biodegradable' / 'Non-Biodegradable' / 'Hazardous'
         )
     """)
+    # Migration: group several detections that came from one photo
+    cur.execute("PRAGMA table_info(detections)")
+    existing = {r[1] for r in cur.fetchall()}
+    if "image_id" not in existing:
+        cur.execute("ALTER TABLE detections ADD COLUMN image_id TEXT")
+    if "image_name" not in existing:
+        cur.execute("ALTER TABLE detections ADD COLUMN image_name TEXT")
     conn.commit()
     conn.close()
 
@@ -63,7 +71,8 @@ def init_db():
 # ─────────────────────────────────────────────
 # Write
 # ─────────────────────────────────────────────
-def save_detections(detections: list[dict], source: str = "upload"):
+def save_detections(detections: list[dict], source: str = "upload",
+                    image_id: str | None = None, image_name: str | None = None):
     """
     detections : list of dicts from classify_image / run_inference_on_frame
     source     : 'webcam' or 'upload'
@@ -81,11 +90,13 @@ def save_detections(detections: list[dict], source: str = "upload"):
             round(d["confidence"], 4),
             d["category_info"]["bin"],
             get_waste_nature(d["class"]),
+            image_id,
+            image_name,
         )
         for d in detections
     ]
     cur.executemany(
-        "INSERT INTO detections (timestamp, source, class_name, confidence, bin_label, waste_nature) VALUES (?,?,?,?,?,?)",
+        "INSERT INTO detections (timestamp, source, class_name, confidence, bin_label, waste_nature, image_id, image_name) VALUES (?,?,?,?,?,?,?,?)",
         rows,
     )
     conn.commit()
