@@ -1,0 +1,49 @@
+ResNet50 Waste Classifier — Evaluation Report
+==============================================================
+Split          : valid
+Checkpoint     : epoch 28  val_acc=97.56%
+Total samples  : 1190
+
+Overall Accuracy  : 95.2941%
+Top-1 Accuracy    : 95.2941%
+Top-2 Accuracy    : 98.2353%
+Top-3 Accuracy    : 99.4118%
+
+Macro  Precision  : 0.9597
+Macro  Recall     : 0.9587
+Macro  F1         : 0.9570
+
+Weighted Precision: 0.9566
+Weighted Recall   : 0.9529
+Weighted F1       : 0.9521
+
+──────────────────────────────────────────────────────────────
+Full Classification Report:
+
+               precision    recall  f1-score   support
+
+      plastic     0.9840    1.0000    0.9919       184
+        metal     0.9027    0.9903    0.9444       103
+        glass     1.0000    0.9091    0.9524        44
+      e_waste     0.9459    0.9906    0.9677       212
+medical_waste     0.8667    0.9883    0.9235       171
+        paper     0.9899    0.8133    0.8929       241
+    cardboard     0.9886    0.9943    0.9914       174
+organic_waste     1.0000    0.9836    0.9917        61
+
+     accuracy                         0.9529      1190
+    macro avg     0.9597    0.9587    0.9570      1190
+ weighted avg     0.9566    0.9529    0.9521      1190
+
+──────────────────────────────────────────────────────────────
+Confusion Matrix (rows=true, cols=predicted):
+
+                 plastic     metal     glass   e_waste  medical_     paper  cardboar  organic_
+  plastic              184         0         0         0         0         0         0         0
+  metal                  1       102         0         0         0         0         0         0
+  glass                  0         2        40         0         2         0         0         0
+  e_waste                1         1         0       210         0         0         0         0
+  medical_waste          0         0         0         1       169         1         0         0
+  paper                  1         8         0        11        23       196         2         0
+  cardboard              0         0         0         0         0         1       173         0
+  organic_waste          0         0         0         0         1         0         0        60

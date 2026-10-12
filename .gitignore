@@ -1,0 +1,43 @@
+# ── Python ───────────────────────────────────────────────────────────────────
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# ── Streamlit ─────────────────────────────────────────────────────────────────
+.streamlit/secrets.toml
+
+# ── Dataset (too large for git) ───────────────────────────────────────────────
+YOLOV8M/
+datasets/
+scripts/datasets/
+data/
+*.cache
+*.zip
+
+# ── Model weights (too large for git) ────────────────────────────────────────
+*.pt
+*.pth
+
+# ── Training run artefacts ────────────────────────────────────────────────────
+runs/
+
+# ── Database (runtime generated) ─────────────────────────────────────────────
+waste_data.db
+
+# ── OS / IDE ──────────────────────────────────────────────────────────────────
+.vscode/
+.DS_Store
+.idea/
+desktop.ini
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
