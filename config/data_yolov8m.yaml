@@ -1,0 +1,14 @@
+path: C:\Users\Chirag\Downloads\Ai-powered-Waste-Classification-and-Segregation-main\Ai-powered-Waste-Classification-and-Segregation-main\YOLOV8M\datasets\balanced_v3
+train: train/images
+val: valid/images
+test: test/images
+nc: 8
+names:
+- plastic
+- metal
+- glass
+- e_waste
+- medical_waste
+- paper
+- cardboard
+- organic_waste

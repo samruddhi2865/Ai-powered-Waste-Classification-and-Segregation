@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 # Python
+=======
+# ── Python ───────────────────────────────────────────────────────────────────
+>>>>>>> d10834e (Add YOLO+ResNet50 two-stage pipeline, training scripts, evaluation reports)
 venv/
 __pycache__/
 *.pyc
@@ -11,6 +15,7 @@ __pycache__/
 dist/
 build/
 
+<<<<<<< HEAD
 # Streamlit
 .streamlit/secrets.toml
 
@@ -42,3 +47,35 @@ logs/
 # Uncomment if models are too large
 # *.pt
 # *.pth
+=======
+# ── Streamlit ─────────────────────────────────────────────────────────────────
+.streamlit/secrets.toml
+
+# ── Dataset (too large for git) ───────────────────────────────────────────────
+YOLOV8M/
+datasets/
+scripts/datasets/
+data/
+*.cache
+*.zip
+
+# ── Model weights (too large for git) ────────────────────────────────────────
+*.pt
+*.pth
+
+# ── Training run artefacts ────────────────────────────────────────────────────
+runs/
+
+# ── Database (runtime generated) ─────────────────────────────────────────────
+waste_data.db
+
+# ── OS / IDE ──────────────────────────────────────────────────────────────────
+.vscode/
+.DS_Store
+.idea/
+desktop.ini
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+>>>>>>> d10834e (Add YOLO+ResNet50 two-stage pipeline, training scripts, evaluation reports)
