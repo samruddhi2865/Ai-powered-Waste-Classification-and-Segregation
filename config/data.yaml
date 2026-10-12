@@ -1,0 +1,17 @@
+path: datasets/merged
+train: train/images
+val: valid/images
+test: test/images
+
+nc: 10
+names:
+  0: plastic
+  1: metal
+  2: glass
+  3: can
+  4: cable
+  5: e_waste
+  6: medical_waste
+  7: paper
+  8: cardboard
+  9: organic_waste
