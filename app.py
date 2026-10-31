@@ -7,6 +7,12 @@ import streamlit as st
 from ultralytics import YOLO
 from PIL import Image, ImageOps
 import cv2
+<<<<<<< HEAD
+=======
+import torch
+import torch.nn as nn
+from torchvision import models, transforms
+>>>>>>> d10834e (Add YOLO+ResNet50 two-stage pipeline, training scripts, evaluation reports)
 from database import save_detections
 
 # ─────────────────────────────────────────────
@@ -20,6 +26,7 @@ st.set_page_config(
 )
 
 # ─────────────────────────────────────────────
+<<<<<<< HEAD
 # Load YOLO model
 #   Put the trained YOLOv8m file at:  models/best.pt
 #   The cache key includes the file's modified time, so replacing
@@ -33,11 +40,54 @@ MODEL_PATH = os.path.join(BASE_DIR, "models", "best.pt")
 def load_model(path: str, mtime: float):
     if not os.path.exists(path):
         st.error(f"Model file not found: {path}")
+=======
+# Paths
+# ─────────────────────────────────────────────
+BASE_DIR         = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH       = os.path.join(BASE_DIR, "models", "best.pt")
+RESNET_PATH      = os.path.join(BASE_DIR, "models", "resnet50_waste.pth")
+
+# ─────────────────────────────────────────────
+# ResNet50 — class mapping (must match train_resnet50.py)
+# ─────────────────────────────────────────────
+RESNET_CLASS_NAMES = {
+    0: "plastic",
+    1: "metal",
+    2: "glass",
+    3: "e_waste",
+    4: "medical_waste",
+    5: "paper",
+    6: "cardboard",
+    7: "organic_waste",
+}
+NUM_RESNET_CLASSES = len(RESNET_CLASS_NAMES)
+
+# ImageNet normalisation for ResNet50 inference
+_RESNET_TF = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize([0.485, 0.456, 0.406],
+                         [0.229, 0.224, 0.225]),
+])
+
+# ─────────────────────────────────────────────
+# Load YOLOv8m  (detection — bounding boxes only)
+#   Cache key includes mtime so swapping best.pt is picked up automatically.
+# ─────────────────────────────────────────────
+@st.cache_resource
+def load_model(path: str, mtime: float):
+    if not os.path.exists(path):
+        st.error(f"YOLO model file not found: {path}")
+>>>>>>> d10834e (Add YOLO+ResNet50 two-stage pipeline, training scripts, evaluation reports)
         return None
     try:
         return YOLO(path)
     except Exception as e:
+<<<<<<< HEAD
         st.error(f"Error loading model: {e}")
+=======
+        st.error(f"Error loading YOLO model: {e}")
+>>>>>>> d10834e (Add YOLO+ResNet50 two-stage pipeline, training scripts, evaluation reports)
         return None
 
 
@@ -47,6 +97,65 @@ model = load_model(
 )
 
 # ─────────────────────────────────────────────
+<<<<<<< HEAD
+=======
+# Load ResNet50  (classification — crop → class label)
+# ─────────────────────────────────────────────
+@st.cache_resource
+def load_resnet(path: str, mtime: float):
+    """
+    Builds the same ResNet50 architecture used in train_resnet50.py,
+    loads the saved weights, and returns the model in eval mode.
+    Returns None (with a sidebar warning) if the checkpoint is absent.
+    """
+    if not os.path.exists(path):
+        return None          # caller shows the warning
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    net = models.resnet50(weights=None)
+    net.fc = nn.Sequential(
+        nn.Dropout(p=0.4),
+        nn.Linear(net.fc.in_features, 512),
+        nn.ReLU(inplace=True),
+        nn.Dropout(p=0.3),
+        nn.Linear(512, NUM_RESNET_CLASSES),
+    )
+    try:
+        ckpt = torch.load(path, map_location=device)
+        net.load_state_dict(ckpt["model_state_dict"])
+        net.to(device)
+        net.eval()
+        return net
+    except Exception as e:
+        st.error(f"Error loading ResNet50: {e}")
+        return None
+
+
+resnet_model = load_resnet(
+    RESNET_PATH,
+    os.path.getmtime(RESNET_PATH) if os.path.exists(RESNET_PATH) else 0.0,
+)
+
+_RESNET_DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def classify_crop_resnet(crop_pil: Image.Image) -> tuple[str, float]:
+    """
+    Run ResNet50 on a PIL crop and return (class_name, confidence).
+    Falls back to 'unknown' if ResNet50 is not loaded.
+    """
+    if resnet_model is None:
+        return "unknown", 0.0
+    tensor = _RESNET_TF(crop_pil).unsqueeze(0).to(_RESNET_DEVICE)
+    with torch.no_grad():
+        logits = resnet_model(tensor)
+        probs  = torch.softmax(logits, dim=1)[0]
+        top1   = int(probs.argmax())
+        conf   = float(probs[top1])
+    return RESNET_CLASS_NAMES.get(top1, "unknown"), conf
+
+# ─────────────────────────────────────────────
+>>>>>>> d10834e (Add YOLO+ResNet50 two-stage pipeline, training scripts, evaluation reports)
 # Waste categories — 8 classes matching the YOLOv8m model
 # (removed 'can' and 'cable' from the old 10-class system —
 #  'can' folds into 'metal', 'cable' folds into 'e_waste')
@@ -158,6 +267,7 @@ def normalize_class(name) -> str:
     return aliases.get(n, n)
 
 
+<<<<<<< HEAD
 def _extract(result):
     dets = []
     # Classification model (yolov8-cls): no boxes, only class probabilities
@@ -167,10 +277,42 @@ def _extract(result):
         dets.append({
             'class':         cname,
             'confidence':    float(probs.top1conf),
+=======
+def _extract(result, source_image: Image.Image | None = None):
+    """
+    Extract detections from a YOLO result.
+
+    Two-stage pipeline:
+      1. YOLOv8m provides bounding boxes (where the waste is).
+      2. ResNet50 classifies each cropped region (what class it is).
+
+    If ResNet50 is not loaded yet (e.g. model file missing), the class
+    label from YOLO's own head is used as a fallback so the app still
+    works before training is complete.
+
+    source_image: the original PIL image, needed to crop boxes for ResNet50.
+                  Pass None to skip ResNet50 classification (YOLO-only fallback).
+    """
+    dets = []
+
+    # ── Classification model (yolov8-cls): no boxes, only class probs ──
+    probs = getattr(result, "probs", None)
+    if probs is not None:
+        cname = normalize_class(result.names[int(probs.top1)])
+        # Even for a cls model, try ResNet50 on the whole image
+        if source_image is not None and resnet_model is not None:
+            cname, conf = classify_crop_resnet(source_image)
+        else:
+            conf = float(probs.top1conf)
+        dets.append({
+            'class':         cname,
+            'confidence':    conf,
+>>>>>>> d10834e (Add YOLO+ResNet50 two-stage pipeline, training scripts, evaluation reports)
             'category_info': WASTE_CATEGORIES.get(cname, DEFAULT_CATEGORY),
             'xyxy':          None,
         })
         return dets
+<<<<<<< HEAD
     if result.boxes is None or len(result.boxes) == 0:
         return dets
     for box in result.boxes:
@@ -180,11 +322,51 @@ def _extract(result):
             'confidence':    float(box.conf[0]),
             'category_info': WASTE_CATEGORIES.get(cname, DEFAULT_CATEGORY),
             'xyxy':          [int(v) for v in box.xyxy[0].tolist()],
+=======
+
+    # ── Detection model: use YOLO boxes + ResNet50 classification ───
+    if result.boxes is None or len(result.boxes) == 0:
+        return dets
+
+    W = H = None
+    if source_image is not None:
+        W, H = source_image.size
+
+    for box in result.boxes:
+        xyxy = [int(v) for v in box.xyxy[0].tolist()]
+
+        # ── ResNet50 classification on the cropped region ────────────
+        if source_image is not None and resnet_model is not None and W and H:
+            x1, y1, x2, y2 = xyxy
+            # 10px padding, clamped to image bounds
+            pad = 10
+            x1c = max(0,     x1 - pad)
+            y1c = max(0,     y1 - pad)
+            x2c = min(W - 1, x2 + pad)
+            y2c = min(H - 1, y2 + pad)
+            if x2c > x1c and y2c > y1c:
+                crop  = source_image.crop((x1c, y1c, x2c, y2c))
+                cname, conf = classify_crop_resnet(crop)
+            else:
+                cname = normalize_class(result.names.get(int(box.cls[0]), str(int(box.cls[0]))))
+                conf  = float(box.conf[0])
+        else:
+            # Fallback: use YOLO's own class prediction
+            cname = normalize_class(result.names.get(int(box.cls[0]), str(int(box.cls[0]))))
+            conf  = float(box.conf[0])
+
+        dets.append({
+            'class':         cname,
+            'confidence':    conf,
+            'category_info': WASTE_CATEGORIES.get(cname, DEFAULT_CATEGORY),
+            'xyxy':          xyxy,
+>>>>>>> d10834e (Add YOLO+ResNet50 two-stage pipeline, training scripts, evaluation reports)
         })
     return dets
 
 
 def classify_image(image, conf_threshold=0.25):
+<<<<<<< HEAD
     """Runs YOLO on a PIL image. If nothing is found, retries once at a lower
     confidence so a weak-but-correct prediction is not silently dropped."""
     results = model(image, conf=conf_threshold, imgsz=640, iou=0.5, max_det=100, verbose=False)
@@ -192,6 +374,15 @@ def classify_image(image, conf_threshold=0.25):
     if not detections and conf_threshold > 0.10:
         results = model(image, conf=0.10, imgsz=640, verbose=False)
         detections = [d for r in results for d in _extract(r)]
+=======
+    """Runs YOLO on a PIL image for boxes, then ResNet50 on each crop.
+    If nothing is found, retries once at a lower confidence."""
+    results = model(image, conf=conf_threshold, imgsz=640, iou=0.5, max_det=100, verbose=False)
+    detections = [d for r in results for d in _extract(r, source_image=image)]
+    if not detections and conf_threshold > 0.10:
+        results = model(image, conf=0.10, imgsz=640, verbose=False)
+        detections = [d for r in results for d in _extract(r, source_image=image)]
+>>>>>>> d10834e (Add YOLO+ResNet50 two-stage pipeline, training scripts, evaluation reports)
     return results, detections
 
 
@@ -220,17 +411,31 @@ def _nms(dets, iou_thr=0.5, keep=30):
 
 def detect_multiscale(image, conf):
     """
+<<<<<<< HEAD
     Runs the model on the whole photo AND on four overlapping zoomed-in tiles,
     then merges the results. Cluttered photos hold many small objects, and zooming
     in lets the model consider each region on its own. Returns every prediction
     (even very low confidence) so the report can list them all.
+=======
+    Runs YOLO on the full photo AND on four overlapping 60%-size tiles,
+    then classifies each crop with ResNet50 and merges via NMS.
+>>>>>>> d10834e (Add YOLO+ResNet50 two-stage pipeline, training scripts, evaluation reports)
     """
     W, H = image.size
 
     def run(img, ox, oy):
+<<<<<<< HEAD
         out = []
         for r in model(img, conf=conf, imgsz=640, iou=0.5, max_det=100, verbose=False):
             out += _extract(r)
+=======
+        """Run YOLO on img, offset boxes by (ox, oy), classify crops with ResNet50."""
+        out = []
+        pil_img = img if isinstance(img, Image.Image) else Image.fromarray(img)
+        for r in model(pil_img, conf=conf, imgsz=640, iou=0.5, max_det=100, verbose=False):
+            out += _extract(r, source_image=pil_img)
+        # Shift box coordinates back to original image space
+>>>>>>> d10834e (Add YOLO+ResNet50 two-stage pipeline, training scripts, evaluation reports)
         for d in out:
             if d['xyxy'] is not None:
                 x1, y1, x2, y2 = d['xyxy']
@@ -242,7 +447,12 @@ def detect_multiscale(image, conf):
         tw, th = int(W * 0.6), int(H * 0.6)
         for ox in (0, W - tw):
             for oy in (0, H - th):
+<<<<<<< HEAD
                 dets += run(image.crop((ox, oy, ox + tw, oy + th)), ox, oy)
+=======
+                tile = image.crop((ox, oy, ox + tw, oy + th))
+                dets += run(tile, ox, oy)
+>>>>>>> d10834e (Add YOLO+ResNet50 two-stage pipeline, training scripts, evaluation reports)
     return _nms(dets)
 
 
@@ -266,17 +476,38 @@ def draw_detections(image, detections):
 
 
 def debug_predictions(image):
+<<<<<<< HEAD
     """Raw top predictions at a very low confidence, to see what the model 'thinks'."""
     res = model(image, conf=0.001, imgsz=640, verbose=False)
     rows = [(d['class'], round(d['confidence'], 3)) for r in res for d in _extract(r)]
+=======
+    """Raw top predictions at a very low confidence, to see what the model 'thinks'.
+    Uses YOLO-only (no ResNet50) so the raw YOLO output is visible for diagnostics."""
+    res = model(image, conf=0.001, imgsz=640, verbose=False)
+    rows = []
+    for r in res:
+        for box in (r.boxes or []):
+            cname = normalize_class(r.names.get(int(box.cls[0]), str(int(box.cls[0]))))
+            rows.append((cname, round(float(box.conf[0]), 3)))
+        probs = getattr(r, "probs", None)
+        if probs is not None:
+            cname = normalize_class(r.names[int(probs.top1)])
+            rows.append((cname, round(float(probs.top1conf), 3)))
+>>>>>>> d10834e (Add YOLO+ResNet50 two-stage pipeline, training scripts, evaluation reports)
     rows.sort(key=lambda x: -x[1])
     return rows[:8]
 
 
 def run_inference_on_frame(frame_bgr, conf_threshold):
     frame_rgb  = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+<<<<<<< HEAD
     results    = model(frame_rgb, conf=conf_threshold, imgsz=640, verbose=False)
     detections = [d for r in results for d in _extract(r)]
+=======
+    pil_frame  = Image.fromarray(frame_rgb)
+    results    = model(frame_rgb, conf=conf_threshold, imgsz=640, verbose=False)
+    detections = [d for r in results for d in _extract(r, source_image=pil_frame)]
+>>>>>>> d10834e (Add YOLO+ResNet50 two-stage pipeline, training scripts, evaluation reports)
 
     for det in detections:
         cat = det['category_info']
@@ -574,7 +805,11 @@ st.markdown("""
         to its statutory bin category, and records the observation for municipal reporting.
     </div>
     <div class="hero-badge-row">
+<<<<<<< HEAD
         <span class="hero-badge hb-blue">YOLOv8m Object Detection</span>
+=======
+        <span class="hero-badge hb-blue">YOLOv8m Detection + ResNet50 Classification</span>
+>>>>>>> d10834e (Add YOLO+ResNet50 two-stage pipeline, training scripts, evaluation reports)
         <span class="hero-badge hb-amber">8 Notified Waste Classes</span>
         <span class="hero-badge hb-green">Live Camera &amp; Photo Upload</span>
     </div>
@@ -588,6 +823,16 @@ else:
     if not _model_ok:
         st.warning(_model_msg)
 
+<<<<<<< HEAD
+=======
+if resnet_model is None:
+    st.info(
+        "ℹ️ **ResNet50 classifier not loaded** — `models/resnet50_waste.pth` not found. "
+        "YOLO's own class labels will be used as a fallback until you train and place the ResNet50 model. "
+        "Run `python scripts/train_resnet50.py` to train it."
+    )
+
+>>>>>>> d10834e (Add YOLO+ResNet50 two-stage pipeline, training scripts, evaluation reports)
 # ─────────────────────────────────────────────
 # Sidebar
 # ─────────────────────────────────────────────
@@ -602,7 +847,13 @@ with st.sidebar:
     camera_index   = st.number_input("Camera Index", min_value=0, max_value=5, value=0, step=1,
                                      help="0 = default webcam. Try 1 or 2 if camera fails.")
     if model is not None:
+<<<<<<< HEAD
         st.caption(f"Model task: {getattr(model, 'task', '?')} · {len(model.names)} classes")
+=======
+        st.caption(f"YOLO task: {getattr(model, 'task', '?')} · {len(model.names)} classes")
+    resnet_status = "✅ loaded" if resnet_model is not None else "⚠️ not found — run train_resnet50.py"
+    st.caption(f"ResNet50: {resnet_status}")
+>>>>>>> d10834e (Add YOLO+ResNet50 two-stage pipeline, training scripts, evaluation reports)
     st.markdown("---")
     st.page_link("pages/dashboard.py", label="Analytics Dashboard", icon="📊")
     st.markdown("---")
